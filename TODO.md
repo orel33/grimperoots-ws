@@ -269,7 +269,7 @@ Avant toute écriture :
 
 ## Phase 10 — Écriture Joomla
 
-Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. Les journaux du client ne contiennent pas le corps de ces anciennes réponses, donc leur détail ne peut pas être récupéré après coup via l'API standard. `apply.py` conserve désormais un extrait de la réponse HTTP pour les prochaines erreurs, en masquant le token. La cause serveur reste à déterminer à partir d'une future réponse détaillée ou des journaux Joomla/PHP.
+Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. Un PATCH identique autorisé sur le CR 795 a capturé le corps JSON `{"errors":{"code":500,"title":"Internal server error"}}` ; la relecture confirme toujours `[33, 36]`. La réponse API reste générique et ne révèle pas l'exception ni sa trace. `apply.py` conserve désormais un extrait de la réponse HTTP pour les prochaines erreurs, en masquant le token. La cause serveur reste à déterminer à partir des journaux Joomla/PHP ou du serveur web, qui ne sont pas accessibles via l'API Web Services standard.
 
 ```bash
 python apply.py 764 --apply
