@@ -105,10 +105,10 @@ Aucun indice isolé ne suffit à lui seul : apprécier leur combinaison et le de
 
 ### 30 — Famille
 
-- **Définition proposée :** sortie pensée pour une pratique en famille ou racontée principalement à travers cette dimension.
-- **À utiliser quand :** la participation d’enfants ou l’adaptation de l’activité à une sortie familiale est un élément important de l’article.
-- **Ne pas utiliser quand :** le texte mentionne seulement des membres de la famille, un couple ou un groupe d’amis sans dimension familiale significative.
-- **Statut :** à valider ; préciser si la présence d’enfants suffit ou si la sortie doit être spécifiquement adaptée.
+- **Définition proposée :** sortie à laquelle participent explicitement des enfants avec leurs parents.
+- **À utiliser quand :** le compte rendu indique clairement la présence des enfants avec leurs parents pendant la sortie.
+- **Ne pas utiliser quand :** le texte évoque seulement une famille, un couple ou des amis, ou ne précise pas que des enfants accompagnent leurs parents.
+- **Statut :** périmètre métier précisé : enfants explicitement présents avec leurs parents.
 
 ### 31 — Mobilité Douce
 
@@ -128,7 +128,7 @@ Aucun indice isolé ne suffit à lui seul : apprécier leur combinaison et le de
 
 - **Définition proposée :** randonnée pédestre ou trek constituant l’activité principale ou une activité notable de la sortie.
 - **À utiliser quand :** l’article décrit une randonnée ou un trek réellement pratiqué et suffisamment présent dans le récit pour compter parmi les activités de la sortie.
-- **Ne pas utiliser quand :** la marche, même longue ou difficile, sert d'approche ou de retour pour l'activité principale. Si la sortie est centrée sur la cascade de glace, l'escalade, le ski de randonnée, l'alpinisme ou le canyon, retenir le tag de cette activité et ne pas ajouter `Randonnée` pour une marche secondaire ou une approche. Une randonnée aquatique, variante du canyon, relève de `Canyon` et ne justifie pas à elle seule `Randonnée`. Une mention incidente d'autres participants faisant une randonnée ne suffit pas. Distinguer un trek, qui est une activité en soi, de la marche d'approche d'une course. La randonnée hivernale à skis ou en raquettes relève du tag `Ski de Rando`.
+- **Ne pas utiliser quand :** la marche, même longue ou difficile, sert d'approche ou de retour pour l'activité principale. Si la sortie est centrée sur la cascade de glace, l'escalade, le ski de randonnée, l'alpinisme ou le canyon, retenir le tag de cette activité et ne pas ajouter `Randonnée` pour une marche secondaire ou une approche. Une randonnée aquatique, variante du canyon, relève de `Canyon` et ne justifie pas à elle seule `Randonnée`. Une mention incidente d'autres participants faisant une randonnée ne suffit pas. Distinguer un trek, qui est une activité en soi, de la marche d'approche d'une course. Une randonnée en montagne l'hiver dans la neige relève de `Ski de Rando`, que le déplacement se fasse à skis ou en raquettes.
 - **Combinaison :** `Randonnée` coexiste rarement avec `Cascade de Glace`, `Escalade`, `Ski de Rando`, `Alpinisme` ou `Canyon`. Elle peut s'ajouter si l'article raconte aussi un trek pédestre distinct et substantiel ; une randonnée secondaire au regard des activités dominantes ne suffit pas.
 - **Statut :** distinction entre randonnée pédestre/trek, approche et randonnée hivernale précisée.
 
@@ -141,10 +141,10 @@ Aucun indice isolé ne suffit à lui seul : apprécier leur combinaison et le de
 
 ### 36 — Ski de Rando
 
-- **Définition proposée :** randonnée hivernale réalisée à skis ou en raquettes.
-- **À utiliser quand :** l’article raconte une sortie de ski de randonnée ou une randonnée à raquettes. Pour une sortie de ski de randonnée, la montée et la descente se font généralement à skis, avec des peaux de phoque à la montée.
+- **Définition proposée :** randonnée hivernale en montagne dans la neige, réalisée à skis ou en raquettes.
+- **À utiliser quand :** l’article raconte une sortie de ski de randonnée ou une randonnée à raquettes. Ce tag s'applique aussi lorsque le récit décrit une randonnée en montagne l'hiver dans la neige sans préciser si le groupe utilisait des skis ou des raquettes. Pour une sortie de ski de randonnée, la montée et la descente se font généralement à skis, avec des peaux de phoque à la montée.
 - **Ne pas utiliser quand :** il s’agit de ski alpin en station, de ski de fond ou d’une simple approche hivernale vers une autre activité.
-- **Statut :** périmètre étendu à la randonnée en raquettes selon la définition métier.
+- **Statut :** couvre le ski de randonnée et les raquettes ; en montagne l'hiver dans la neige, retenir ce tag plutôt que `Randonnée`.
 
 ### 37 — Vélo & VTT
 
@@ -173,3 +173,10 @@ Aucun indice isolé ne suffit à lui seul : apprécier leur combinaison et le de
 - **À utiliser quand :** le lieu réel de la sortie se situe dans le Massif central.
 - **Ne pas utiliser quand :** le Massif central est seulement cité ou que la sortie se déroule ailleurs.
 - **Statut :** à valider, notamment pour les limites géographiques retenues et le recoupement avec Caroux.
+
+### 42 — Via Ferrata
+
+- **Définition proposée :** progression sur un itinéraire rocheux équipé d’éléments fixes destinés à sécuriser l’ascension.
+- **À utiliser quand :** l’article décrit une via ferrata réellement parcourue, avec câble, échelons ou autres équipements fixes.
+- **Ne pas utiliser quand :** une via ferrata est seulement mentionnée, ou que l’itinéraire décrit est une voie d’escalade équipée.
+- **Statut :** première définition métier, à préciser selon le périmètre retenu.

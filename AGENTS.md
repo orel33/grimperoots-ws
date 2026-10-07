@@ -53,7 +53,9 @@ Le modèle doit identifier :
 
 La catégorie Joomla est un indice fiable et fort du contexte de l'article. `Montagne été` et `Montagne hiver` indiquent fortement la saison et le cadre de la sortie ; `Canyoning` indique fortement que le canyon est au cœur du compte rendu. Utiliser ces catégories pour orienter l'interprétation des tags correspondants, en les confrontant au récit complet pour identifier l'activité précise.
 
-La marche d'approche, même longue ou difficile, ne justifie pas le tag `Randonnée` lorsqu'elle sert une activité principale comme la cascade de glace, l'escalade, le ski de randonnée, l'alpinisme ou le canyon. Une randonnée secondaire à ces activités dominantes ne justifie pas non plus le tag. `Randonnée` désigne un trek ou une randonnée pédestre pratiquée comme activité ; elle coexiste rarement avec ces tags et ne s'y ajoute que si un trek distinct est décrit de manière substantielle dans le compte rendu. Une mention incidente d'autres participants faisant une randonnée ne suffit pas. La randonnée hivernale à skis ou en raquettes relève de `Ski de Rando`.
+La marche d'approche, même longue ou difficile, ne justifie pas le tag `Randonnée` lorsqu'elle sert une activité principale comme la cascade de glace, l'escalade, le ski de randonnée, l'alpinisme ou le canyon. Une randonnée secondaire à ces activités dominantes ne justifie pas non plus le tag. `Randonnée` désigne un trek ou une randonnée pédestre pratiquée comme activité ; elle coexiste rarement avec ces tags et ne s'y ajoute que si un trek distinct est décrit de manière substantielle dans le compte rendu. Une mention incidente d'autres participants faisant une randonnée ne suffit pas. Une randonnée en montagne l'hiver dans la neige relève de `Ski de Rando`, que le déplacement se fasse à skis ou en raquettes, même si le récit ne précise pas le matériel.
+
+Le tag `Famille` s'applique uniquement lorsque le compte rendu indique explicitement que des enfants participent à la sortie avec leurs parents. Ne pas le déduire d'une simple mention de famille, d'un couple ou d'un groupe d'amis.
 
 ---
 

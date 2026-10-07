@@ -21,6 +21,11 @@ PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_LOGS_DIR = PROJECT_DIR / "logs"
 ENV_KEYS = ("JOOMLA_BASE_URL", "JOOMLA_TOKEN")
+KNOWN_APPLY_WARNING = (
+    "AVERTISSEMENT — Voir BUGS.md : sur l'instance actuelle, le plugin Content - JComments "
+    "provoque une réponse HTTP 500 après certains PATCH API. La relecture confirme si les tags "
+    "ont été enregistrés ; l'actualisation des métadonnées JComments peut, elle, échouer."
+)
 
 
 class ApplyError(RuntimeError):
@@ -491,6 +496,9 @@ def main() -> int:
         parsed_base = urlsplit(base_url)
         if parsed_base.scheme != "https" or not parsed_base.netloc:
             raise ApplyError("JOOMLA_BASE_URL doit être une URL https valide.")
+
+        if args.apply:
+            print(KNOWN_APPLY_WARNING)
 
         ssl_context = create_ssl_context()
         if args.all:

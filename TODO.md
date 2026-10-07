@@ -254,9 +254,11 @@ Affichage souhaité :
 
 ## Phase 9 — Validation manuelle
 
-Avant toute écriture :
+État au 8 octobre 2026 : 18 comptes rendus ont fait l’objet d’une revue humaine et leurs propositions sont validées dans `data/proposals.json`. Dix CR supplémentaires ont été lus intégralement après les huit premiers. Pour cet échantillon, `classify.py` n’a pas été utilisé : son SDK manque dans l’environnement et les articles ont été analysés manuellement. Cette revue reste un échantillon initial, inférieur à la cible de 20 à 50 articles.
 
-- [ ] contrôler entre 20 et 50 articles (8 articles discutés/validés à ce jour) ;
+Avant d’étendre la classification à tout le corpus :
+
+- [ ] contrôler entre 20 et 50 articles (18 articles discutés/validés à ce jour) ;
 - [ ] vérifier plusieurs types de sorties ;
 - [ ] vérifier les articles courts ;
 - [ ] vérifier les articles contenant plusieurs lieux ;
@@ -269,10 +271,9 @@ Avant toute écriture :
 
 ## Phase 10 — Écriture Joomla
 
-Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. La trace récupérée par FTP après un PATCH identique sur le CR 795 montre que le plugin de contenu `JComments` plante pendant `onContentAfterSave` : il appelle `Route::_()` dans le contexte API, ce qui aboutit à `Call to undefined method Joomla\CMS\Router\ApiRouter::build()`. Le manifeste installé indique JComments 5.0.6 et le journal Joomla indique Joomla 6.1.4. La sauvegarde de l'article et des tags a lieu avant cette erreur post-save ; une relecture confirme `[33, 36]`. Le corps HTTP reste générique (`{"errors":{"code":500,"title":"Internal server error"}}`).
+Le 8 octobre 2026, `python apply.py --all --apply` a parcouru les 18 propositions validées. Neuf articles ont reçu de nouveaux tags ou des retraits validés ; les neuf autres étaient déjà conformes. Une relecture API a confirmé l’état cible pour chaque PATCH malgré la réponse HTTP 500. Le tag Joomla `Via Ferrata` (ID 42) a ensuite été exporté et ajouté au CR 600 par un PATCH ciblé, également confirmé par relecture. Les journaux d’application par article se trouvent dans `logs/`.
 
-Prochaine action d'écriture à différer jusqu'à correction ou contournement contrôlé du plugin : vérifier une mise à jour compatible de Joomla/JComments ou appliquer une correction au plugin en environnement de test, puis confirmer qu'un PATCH ne renvoie plus 500.
-
+La cause du HTTP 500 reste le plugin de contenu `JComments` pendant `onContentAfterSave` : il appelle `Route::_()` dans le contexte API, ce qui aboutit à `Call to undefined method Joomla\CMS\Router\ApiRouter::build()`. Le manifeste installé indique JComments 5.0.6 et le journal Joomla indique Joomla 6.1.4. L’article et ses tags sont enregistrés avant cette erreur post-save ; `apply.py` affiche un avertissement, relit l’article et distingue une cible confirmée d’un état inconnu ou inattendu. Pour les prochaines écritures, conserver le dry-run et vérifier les journaux et les relectures ; corriger JComments reste souhaitable, mais n’est pas un prérequis pour les tags tant que les relectures confirment les résultats.
 ```bash
 python apply.py 764 --apply
 python apply.py --all --apply
