@@ -51,6 +51,20 @@ def load_settings() -> dict[str, str]:
     return settings
 
 
+def report_implicit_inputs() -> None:
+    config_files = [
+        path for path in (Path(".env"), Path(".env.local")) if path.is_file()
+    ]
+    print("Fichiers d'entrée implicites :", file=sys.stderr)
+    if config_files:
+        for path in config_files:
+            print(f"  - {path}", file=sys.stderr)
+    else:
+        print("  - aucun fichier .env présent", file=sys.stderr)
+    print("  - aucun JSON local (source des catégories : API Joomla)", file=sys.stderr)
+    print("  Variables JOOMLA_* de l'environnement priorisées.", file=sys.stderr)
+
+
 def categories_endpoint(base_url: str) -> str:
     base_url = base_url.rstrip("/")
     path = urlsplit(base_url).path.rstrip("/")
@@ -172,6 +186,7 @@ def main() -> int:
         help=f"Save the categories JSON response (default: {DEFAULT_OUTPUT}).",
     )
     args = parser.parse_args()
+    report_implicit_inputs()
 
     try:
         settings = load_settings()

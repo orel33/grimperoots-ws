@@ -51,6 +51,20 @@ def load_settings() -> dict[str, str]:
     return settings
 
 
+def report_implicit_inputs() -> None:
+    config_files = [
+        path for path in (Path(".env"), Path(".env.local")) if path.is_file()
+    ]
+    print("Fichiers d'entrée implicites :", file=sys.stderr)
+    if config_files:
+        for path in config_files:
+            print(f"  - {path}", file=sys.stderr)
+    else:
+        print("  - aucun fichier .env présent", file=sys.stderr)
+    print("  - aucun JSON local (source des articles : API Joomla)", file=sys.stderr)
+    print("  Variables JOOMLA_* de l'environnement priorisées.", file=sys.stderr)
+
+
 def articles_endpoint(base_url: str) -> str:
     base_url = base_url.rstrip("/")
     path = urlsplit(base_url).path.rstrip("/")
@@ -127,6 +141,8 @@ def fetch_all_articles(base_url: str, token: str) -> list[dict]:
     seen_ids: set[str] = set()
     articles: list[dict] = []
     ssl_context = create_ssl_context()
+    page_number = 0
+    total_pages: int | None = None
 
     while next_url:
         parts = urlsplit(next_url)
@@ -139,6 +155,15 @@ def fetch_all_articles(base_url: str, token: str) -> list[dict]:
         seen_pages.add(next_url)
 
         payload = get_page(next_url, token, ssl_context)
+        page_number += 1
+        if total_pages is None:
+            meta = payload.get("meta", {})
+            raw_total_pages = meta.get("total-pages") if isinstance(meta, dict) else None
+            try:
+                total_pages = int(raw_total_pages) if raw_total_pages is not None else None
+            except (TypeError, ValueError):
+                total_pages = None
+
         resources = payload.get("data", payload)
         if not isinstance(resources, list):
             raise RuntimeError("Joomla returned an unexpected articles collection.")
@@ -158,20 +183,40 @@ def fetch_all_articles(base_url: str, token: str) -> list[dict]:
         next_link = links.get("next") if isinstance(links, dict) else None
         next_url = urljoin(next_url, next_link) if isinstance(next_link, str) and next_link else None
 
+        if total_pages:
+            progress = min(page_number / total_pages, 1.0)
+            bar_width = 24
+            filled = round(progress * bar_width)
+            bar = "#" * filled + "-" * (bar_width - filled)
+            status = (
+                f"Articles récupérés : [{bar}] {page_number}/{total_pages} pages "
+                f"({len(articles)} articles)"
+            )
+        else:
+            status = f"Articles récupérés : page {page_number} ({len(articles)} articles)"
+        if sys.stderr.isatty():
+            sys.stderr.write("\r" + status)
+            sys.stderr.flush()
+        else:
+            print(status, file=sys.stderr)
+
+    if sys.stderr.isatty() and page_number:
+        sys.stderr.write("\n")
     return articles
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Fetch all Joomla content articles through the read-only API."
+        description="Fetch all Joomla articles through the read-only Web Services API."
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help=f"Save the articles JSON response (default: {DEFAULT_OUTPUT}).",
+        help=f"Save the article resources (default: {DEFAULT_OUTPUT}).",
     )
     args = parser.parse_args()
+    report_implicit_inputs()
 
     try:
         settings = load_settings()

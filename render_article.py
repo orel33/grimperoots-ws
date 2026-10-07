@@ -10,9 +10,10 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from urllib.parse import urljoin
+from pathlib import PurePosixPath
+from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
-from fetch_article import load_settings
+from fetch_articles import load_settings
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -28,13 +29,97 @@ def site_root_url(base_url: str) -> str:
     return root
 
 
+def report_implicit_inputs(input_dir: Path) -> None:
+    print("Fichiers d'entrée implicites :", file=sys.stderr)
+    env_files = [path for path in (Path(".env"), Path(".env.local")) if path.is_file()]
+    if env_files:
+        for path in env_files:
+            print(f"  - {path} (configuration Joomla)", file=sys.stderr)
+    else:
+        print("  - aucun fichier .env présent (configuration via l'environnement)", file=sys.stderr)
+
+    required = input_dir / "articles.json"
+    print(f"  - {required} (article sélectionné par ID)", file=sys.stderr)
+    for filename in ("authors.json", "categories.json", "tags.json"):
+        path = input_dir / filename
+        status = "lu si présent" if path.is_file() else "optionnel, absent"
+        print(f"  - {path} ({status})", file=sys.stderr)
+    print(f"  - {CSS_SOURCE} (feuille de style copiée vers le rendu)", file=sys.stderr)
+    print("  Les images restent distantes ; aucun fichier image local n'est lu.", file=sys.stderr)
+
+
 class RemoteImageLinks(HTMLParser):
     """Make relative image URLs absolute while preserving the article markup."""
 
-    def __init__(self, site_root: str) -> None:
+    def __init__(self, site_root: str, base_url: str, replace_galleries: bool) -> None:
         super().__init__(convert_charrefs=False)
         self.site_root = site_root.rstrip("/") + "/" if site_root else ""
+        self.base_url = base_url.rstrip("/")
+        self.base_origin = urlsplit(self.base_url)[:2]
+        self.replace_galleries = replace_galleries
         self.parts: list[str] = []
+        self.gallery_depth = 0
+        self.gallery_buffer: list[str] = []
+        self.gallery_image_urls: list[str] = []
+
+    def append(self, value: str) -> None:
+        if self.gallery_depth:
+            self.gallery_buffer.append(value)
+        else:
+            self.parts.append(value)
+
+    def gallery_url(self) -> str | None:
+        """Find the common images/albums directory represented by this SIG gallery."""
+        image_directories: list[tuple[str, ...]] = []
+        base_origin = self.base_origin
+        if not base_origin[0] or not base_origin[1]:
+            return None
+
+        for image_url in self.gallery_image_urls:
+            resolved = urljoin(self.base_url + "/", image_url)
+            parsed = urlsplit(resolved)
+            if parsed[:2] != base_origin:
+                return None
+            path = unquote(parsed.path)
+            marker = "/images/albums/"
+            marker_index = path.find(marker)
+            if marker_index < 0:
+                return None
+            relative_image = path[marker_index + len(marker) :]
+            directory = PurePosixPath(relative_image).parent
+            if not relative_image or str(directory) == ".":
+                return None
+            image_directories.append(directory.parts)
+
+        if not image_directories:
+            return None
+        common_parts: list[str] = []
+        for segments in zip(*image_directories):
+            if len(set(segments)) != 1:
+                break
+            common_parts.append(segments[0])
+        if not common_parts:
+            return None
+
+        public_root = urlsplit(self.site_root)
+        if public_root[:2] != base_origin:
+            return None
+        root_path = public_root.path.rstrip("/")
+        gallery_path = (
+            f"{root_path}/images/albums/{quote('/'.join(common_parts), safe='/')}/"
+        )
+        return urlunsplit((base_origin[0], base_origin[1], gallery_path, "", ""))
+
+    def finish_gallery(self) -> None:
+        destination = self.gallery_url()
+        if destination:
+            self.parts.append(
+                f'<a class="article-gallery-link" href="{escape(destination, quote=True)}">gallery</a>'
+            )
+        else:
+            self.parts.extend(self.gallery_buffer)
+        self.gallery_buffer = []
+        self.gallery_image_urls = []
 
     def remote_url(self, value: str) -> str:
         value = value.strip()
@@ -43,9 +128,28 @@ class RemoteImageLinks(HTMLParser):
         return urljoin(self.site_root, value) if self.site_root else value
 
     def render_start_tag(self, tag: str, attrs: list[tuple[str, str | None]], closed: bool) -> None:
+        tag_name = tag.lower()
+        attributes = dict(attrs)
+        classes = (attributes.get("class") or "").split()
+        is_gallery = tag_name == "div" and "sigplus-gallery" in classes
+        if self.replace_galleries and not self.gallery_depth and is_gallery:
+            self.gallery_depth = 1
+            self.gallery_buffer = []
+            self.gallery_image_urls = []
+        elif self.gallery_depth and tag_name == "div":
+            self.gallery_depth += 1
+
+        if (
+            self.gallery_depth
+            and tag_name == "a"
+            and "sigplus-image" in classes
+            and attributes.get("href")
+        ):
+            self.gallery_image_urls.append(attributes["href"])
+
         rewritten: list[str] = []
         for name, value in attrs:
-            if value is not None and tag.lower() in ("img", "source"):
+            if value is not None and tag_name in ("img", "source"):
                 if name.lower() == "src":
                     value = self.remote_url(value)
                 elif name.lower() == "srcset" and not value.lstrip().lower().startswith("data:"):
@@ -61,7 +165,12 @@ class RemoteImageLinks(HTMLParser):
             else:
                 rewritten.append(f'{name}="{escape(value, quote=True)}"')
         suffix = " />" if closed else ">"
-        self.parts.append(f"<{tag}{(' ' + ' '.join(rewritten)) if rewritten else ''}{suffix}")
+        self.append(f"<{tag}{(' ' + ' '.join(rewritten)) if rewritten else ''}{suffix}")
+
+        if closed and self.gallery_depth and tag_name == "div":
+            self.gallery_depth -= 1
+            if self.gallery_depth == 0:
+                self.finish_gallery()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.render_start_tag(tag, attrs, closed=False)
@@ -70,25 +179,29 @@ class RemoteImageLinks(HTMLParser):
         self.render_start_tag(tag, attrs, closed=True)
 
     def handle_endtag(self, tag: str) -> None:
-        self.parts.append(f"</{tag}>")
+        self.append(f"</{tag}>")
+        if self.gallery_depth and tag.lower() == "div":
+            self.gallery_depth -= 1
+            if self.gallery_depth == 0:
+                self.finish_gallery()
 
     def handle_data(self, data: str) -> None:
-        self.parts.append(data)
+        self.append(data)
 
     def handle_entityref(self, name: str) -> None:
-        self.parts.append(f"&{name};")
+        self.append(f"&{name};")
 
     def handle_charref(self, name: str) -> None:
-        self.parts.append(f"&#{name};")
+        self.append(f"&#{name};")
 
     def handle_comment(self, data: str) -> None:
-        self.parts.append(f"<!--{data}-->")
+        self.append(f"<!--{data}-->")
 
     def handle_decl(self, decl: str) -> None:
-        self.parts.append(f"<!{decl}>")
+        self.append(f"<!{decl}>")
 
     def unknown_decl(self, data: str) -> None:
-        self.parts.append(f"<![{data}]>")
+        self.append(f"<![{data}]>")
 
 
 def load_name_lookup(directory: Path, filename: str, name_keys: tuple[str, ...]) -> dict[str, str]:
@@ -141,12 +254,13 @@ def display_reference(item_id: str | int, names: dict[str, str]) -> str:
 
 
 def article_html(
-    payload: dict,
+    resource: dict,
     attributes: dict,
-    site_root: str,
+    base_url: str,
     authors: dict[str, str],
     categories: dict[str, str],
     tags_by_id: dict[str, str],
+    replace_galleries: bool,
 ) -> str:
     content = attributes.get("text", "")
     if isinstance(content, dict):
@@ -156,16 +270,11 @@ def article_html(
     if not isinstance(content, str):
         content = ""
 
-    parser = RemoteImageLinks(site_root)
+    parser = RemoteImageLinks(site_root_url(base_url), base_url, replace_galleries)
     parser.feed(content)
     parser.close()
     body = "".join(parser.parts)
 
-    resource = payload.get("data", payload)
-    if isinstance(resource, list):
-        resource = resource[0] if resource else {}
-    if not isinstance(resource, dict):
-        resource = {}
     article_id = attributes.get("id", resource.get("id", ""))
     metadata: list[tuple[str, str]] = [("ID", str(article_id))]
     for label, keys in (("Alias", ("alias",)), ("Création", ("created",)), ("Modification", ("modified",))):
@@ -245,18 +354,22 @@ def article_html(
 """
 
 
-def article_resource(payload: object, path: Path) -> tuple[dict, dict]:
+def article_resource(payload: object, article_id: int, path: Path) -> tuple[dict, dict]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object.")
-    resource = payload.get("data", payload)
-    if isinstance(resource, list):
-        resource = resource[0] if resource else {}
+    resources = payload.get("data")
+    if not isinstance(resources, list):
+        raise ValueError(f"{path} does not contain an article list.")
+    resource = next(
+        (item for item in resources if isinstance(item, dict) and str(item.get("id")) == str(article_id)),
+        None,
+    )
     if not isinstance(resource, dict):
-        raise ValueError(f"{path} does not contain an article resource.")
+        raise ValueError(f"Article {article_id} was not found in {path}.")
     attributes = resource.get("attributes", resource)
     if not isinstance(attributes, dict):
-        raise ValueError(f"{path} contains invalid article attributes.")
-    return payload, attributes
+        raise ValueError(f"Article {article_id} in {path} contains invalid attributes.")
+    return resource, attributes
 
 
 def main() -> int:
@@ -266,40 +379,36 @@ def main() -> int:
     parser.add_argument(
         "article_id",
         type=int,
-        nargs="?",
-        help="Render only this article ID; without it, render all numeric JSON files in data/.",
+        help="Joomla article ID to render from data/articles.json.",
     )
-    parser.add_argument("--input-dir", type=Path, default=Path("data"), help="Directory containing raw JSON exports.")
+    parser.add_argument("--input-dir", type=Path, default=Path("data"), help="Directory containing articles.json and lookup exports.")
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Directory for generated HTML files.")
+    parser.add_argument(
+        "--gallery",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Replace rendered SIG galleries with a link to their image directory (default: enabled).",
+    )
     args = parser.parse_args()
-    if args.article_id is not None and args.article_id < 1:
+    report_implicit_inputs(args.input_dir)
+    if args.article_id < 1:
         parser.error("article_id must be a positive integer")
 
-    if args.article_id is not None:
-        sources = [args.input_dir / f"{args.article_id}.json"]
-        if not sources[0].is_file():
-            print(f"Article JSON not found: {sources[0]}", file=sys.stderr)
-            return 1
-    else:
-        sources = sorted(
-            path for path in args.input_dir.glob("*.json") if path.stem.isdecimal()
-        )
-        if not sources:
-            print(f"No article JSON files found in {args.input_dir}.", file=sys.stderr)
-            return 1
+    articles_path = args.input_dir / "articles.json"
+    if not articles_path.is_file():
+        print(f"Article export not found: {articles_path}", file=sys.stderr)
+        return 1
 
     try:
         settings = load_settings()
     except (OSError, ValueError) as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2
-    site_root = site_root_url(settings.get("JOOMLA_BASE_URL", "").strip())
+    base_url = settings.get("JOOMLA_BASE_URL", "").strip()
 
     try:
-        articles = []
-        for source in sources:
-            payload = json.loads(source.read_text(encoding="utf-8"))
-            articles.append((source, *article_resource(payload, source)))
+        payload = json.loads(articles_path.read_text(encoding="utf-8"))
+        resource, attributes = article_resource(payload, args.article_id, articles_path)
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"Could not read article JSON: {error}", file=sys.stderr)
         return 1
@@ -315,15 +424,14 @@ def main() -> int:
         css_path = args.output_dir / "article.css"
         if CSS_SOURCE.resolve() != css_path.resolve():
             shutil.copyfile(CSS_SOURCE, css_path)
-        for source, payload, attributes in articles:
-            html = article_html(payload, attributes, site_root, authors, categories, tags_by_id)
-            destination = args.output_dir / f"{source.stem}.html"
-            destination.write_text(html, encoding="utf-8")
+        html = article_html(resource, attributes, base_url, authors, categories, tags_by_id, args.gallery)
+        destination = args.output_dir / f"{args.article_id}.html"
+        destination.write_text(html, encoding="utf-8")
     except OSError as error:
         print(f"Could not write HTML output: {error}", file=sys.stderr)
         return 1
 
-    print(f"Rendered {len(articles)} article(s) into {args.output_dir}.")
+    print(f"Rendered article {args.article_id} into {destination}.")
     return 0
 
 

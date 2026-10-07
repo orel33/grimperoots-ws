@@ -61,23 +61,24 @@ Il doit :
 - [x] récupérer tous les tags (`fetch_tags.py`) ;
 - [x] récupérer tous les articles (`fetch_articles.py`) ;
 - [x] sauvegarder les tags dans `data/tags.json` ;
-- [x] sauvegarder la réponse complète dans `data/articles.json` ;
-- [ ] découper/normaliser les articles dans `data/articles/{id}.json` si ce format reste nécessaire.
+- [x] sauvegarder les ressources Joomla complètes (texte et relations inclus) dans `data/articles.json` ;
+- [x] rendre un article HTML à la demande depuis `data/articles.json` (`python render_article.py 22`).
 
-Exports complémentaires déjà disponibles : `fetch_categories.py` produit `data/categories.json`, `fetch_authors.py` produit `data/authors.json` (ID et nom uniquement), et `fetch_article.py` récupère un article individuel avec ses relations Joomla dans `data/`. `render_article.py` génère les pages HTML à partir de ces exports dans `output/`.
+`fetch_articles.py` conserve toutes les ressources d'articles dans `data/articles.json`. `render_article.py <id>` sélectionne une ressource dans ce fichier et génère `output/<id>.html`. Exports complémentaires : `fetch_categories.py` produit `data/categories.json` et `fetch_authors.py` produit `data/authors.json` (ID et nom uniquement).
 
 Structure cible :
 
 ```text
 data/
-├── tags.json
-└── articles/
-    ├── 123.json
-    ├── 124.json
-    └── ...
+├── articles.json
+├── authors.json
+├── categories.json
+└── tags.json
 ```
 
-Pour chaque article, conserver au minimum :
+`articles.json` contient la liste `data` des ressources Joomla complètes, avec les relations d'auteur, de catégorie et de tags. Le renderer sélectionne l'article par ID sans créer de fichier JSON individuel.
+
+Les informations essentielles disponibles par article incluent au minimum :
 
 ```json
 {
