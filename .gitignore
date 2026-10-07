@@ -3,5 +3,6 @@
 !.env.example
 data/
 output/
+logs/
 __pycache__/
 *.py[cod]

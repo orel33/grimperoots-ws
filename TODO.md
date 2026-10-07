@@ -10,6 +10,7 @@
   - fichiers contenant des tokens ;
   - caches Python et données locales (`data/`) ;
   - éventuels fichiers temporaires.
+- [x] Ajouter une documentation d'utilisation dans `README.md`.
 - [ ] Compléter l'arborescence cible (`src/`, `logs/`, etc.) si le projet en a besoin :
 
 ```text
@@ -100,14 +101,12 @@ Les informations essentielles disponibles par article incluent au minimum :
 
 ## Phase 4 — Documentation de la taxonomie
 
-Créer `TAGS.md`.
+`TAGS.md` contient les IDs et intitulés exportés de Joomla ainsi qu'une première proposition de définitions métier. Ces définitions restent à valider avant d'être considérées comme référence.
 
 Pour chaque tag :
-- [ ] nom ;
-- [ ] identifiant Joomla ;
-- [ ] définition ;
-- [ ] cas d'utilisation ;
-- [ ] cas où le tag ne doit pas être utilisé.
+- [x] nom et identifiant Joomla ;
+- [x] première définition, cas d'utilisation et cas d'exclusion proposés ;
+- [ ] validation métier des descriptions et arbitrage des périmètres signalés.
 
 Exemple :
 
@@ -125,37 +124,42 @@ Ne pas utiliser pour une simple mention de la Corse.
 
 Fournisseur retenu : API OpenAI, appelée avec le SDK Python officiel et l'API Responses. Utiliser une sortie structurée JSON Schema. Lire `OPENAI_API_KEY` depuis l'environnement et configurer le nom du modèle via `OPENAI_MODEL`; ne jamais versionner la clé. L'usage API est facturé séparément de ChatGPT. Choisir le modèle définitif après évaluation sur un échantillon représentatif.
 
-Créer un script :
+Le premier script traite un article à la fois. La procédure d'installation, de configuration et d'exécution est documentée dans `README.md`.
 
 ```bash
-python classify.py
+python classify.py 802
 ```
 
+`classify.py <ID>` lit `data/articles.json`, `data/tags.json`, et si disponibles `data/categories.json` et `data/authors.json`. Il transmet au modèle le contenu complet de l'article, les relations connues, la liste fermée des tags Joomla et leurs descriptions depuis `TAGS.md`. Le prompt de référence est `prompts/classify_article.md` ; le schéma de sortie est `schemas/classification.schema.json`.
+
+Le programme écrit ou met à jour l'entrée de cet article dans `data/proposals.json`. Il ne contacte Joomla que pour les exports effectués par les scripts `fetch_*`; la classification elle-même ne fait aucun appel d'écriture au site. `--dry-run` résume les données préparées sans appeler OpenAI ni créer de proposition.
+
+La clé `OPENAI_API_KEY` et le modèle `OPENAI_MODEL` doivent être configurés dans l'environnement, `.env` ou `.env.local`. Le SDK Python `openai` doit être installé. Les appels à l'API sont facturés indépendamment d'un abonnement ChatGPT.
+
 Pour chaque article, envoyer au modèle :
-- [ ] titre ;
-- [ ] catégorie ;
-- [ ] date ;
-- [ ] `introtext` ;
-- [ ] `fulltext` ;
-- [ ] tags existants ;
-- [ ] tags autorisés ;
-- [ ] descriptions éventuelles de `TAGS.md`.
+- [x] titre ;
+- [x] catégorie ;
+- [x] date ;
+- [x] texte éditorial complet (`introtext`/`fulltext` si séparés, sinon champ combiné `text`) ;
+- [x] tags existants ;
+- [x] tags autorisés ;
+- [x] descriptions métier de `TAGS.md`.
 
 Règles du prompt :
-- [ ] classification sémantique ;
-- [ ] lecture de l'article complet ;
-- [ ] pas de simple matching de mots-clés ;
-- [ ] pas de tag pour une mention incidente ;
-- [ ] aucun nouveau tag inventé ;
-- [ ] possibilité de ne proposer aucun nouveau tag ;
-- [ ] possibilité de signaler une ambiguïté ;
-- [ ] conservation des tags existants.
+- [x] classification sémantique ;
+- [x] lecture de l'article complet ;
+- [x] pas de simple matching de mots-clés ;
+- [x] pas de tag pour une mention incidente ;
+- [x] aucun nouveau tag inventé ;
+- [x] possibilité de ne proposer aucun nouveau tag ;
+- [x] possibilité de signaler une ambiguïté ;
+- [x] conservation des tags existants.
 
 ---
 
 ## Phase 6 — Format de sortie
 
-Utiliser une sortie JSON structurée.
+Utiliser une sortie JSON structurée. Le schéma de sortie est préparé dans `schemas/classification.schema.json`.
 
 Exemple :
 
@@ -178,15 +182,15 @@ Exemple :
 }
 ```
 
-- [ ] Valider le JSON renvoyé.
-- [ ] Gérer proprement les erreurs de classification.
-- [ ] Permettre de relancer uniquement les articles en erreur.
+- [x] Demander une sortie OpenAI Structured Outputs conforme au schéma et vérifier localement les IDs de tags et les champs reçus.
+- [x] Signaler les erreurs d'entrée, de réponse et d'appel API.
+- [x] Relancer un article précis avec `python classify.py <ID>`.
 
 ---
 
 ## Phase 7 — Génération de `proposals.json`
 
-Créer :
+`classify.py <ID>` crée ou met à jour l'entrée de l'article dans :
 
 ```text
 data/proposals.json
@@ -212,8 +216,8 @@ Règle :
 tags_finaux = tags_existants UNION tags_validés
 ```
 
-- [ ] Ne jamais supprimer automatiquement les tags existants.
-- [ ] Distinguer clairement :
+- [x] Ne jamais supprimer automatiquement les tags existants.
+- [x] Distinguer clairement :
   - tags existants ;
   - tags proposés ;
   - nouveaux tags ;
@@ -223,38 +227,28 @@ tags_finaux = tags_existants UNION tags_validés
 
 ## Phase 8 — Inspection et dry-run
 
-Créer :
+`apply.py <ID>` inspecte un article et `apply.py --all` parcourt toutes les propositions validées, une par une. Les deux modes interrogent l'API Joomla en lecture seule par défaut, contrôlent la proposition et comparent ses tags à l'état courant. En mode global, les propositions non validées sont listées et ignorées ; une erreur sur un article est signalée sans interrompre les articles suivants.
 
 ```bash
-python apply.py --dry-run
+python apply.py 764 --dry-run
+python apply.py --all --dry-run
 ```
 
 Affichage souhaité :
 
 ```text
-Article 123 — Traversée de Bavella
-
-Tags existants :
-  Escalade
-
-Tags proposés :
-  Corse
-
-Tags finaux :
-  Escalade
-  Corse
+[1/8] Article 764 — Les Segpa au ski de rando
+  +Pyrénées (33)  -Randonnée (34)
+  Simulation : aucun PATCH envoyé.
 ```
 
-Ajouter si utile :
-
-```bash
-python apply.py --dry-run --article=123
-python apply.py --dry-run --tag=Corse
-```
-
-- [ ] Prévoir éventuellement une sortie CSV.
-- [ ] Pouvoir inspecter facilement les cas ambigus.
-- [ ] Ne faire aucune écriture dans ce mode.
+- [x] Pouvoir inspecter un article avec `python apply.py <ID> --dry-run`.
+- [x] Parcourir toutes les propositions validées avec `python apply.py --all --dry-run`.
+- [x] Afficher les changements avec un diff compact `+Tag` / `-Tag`.
+- [x] Ignorer et lister les propositions qui n'ont pas été validées.
+- [x] Ne faire aucune écriture en mode simulation (mode par défaut).
+- [x] Refuser les propositions sans revue humaine validée et les suppressions non approuvées.
+- [ ] Prévoir éventuellement une sortie CSV et l'inspection par tag.
 
 ---
 
@@ -262,7 +256,7 @@ python apply.py --dry-run --tag=Corse
 
 Avant toute écriture :
 
-- [ ] contrôler entre 20 et 50 articles ;
+- [ ] contrôler entre 20 et 50 articles (8 articles discutés/validés à ce jour) ;
 - [ ] vérifier plusieurs types de sorties ;
 - [ ] vérifier les articles courts ;
 - [ ] vérifier les articles contenant plusieurs lieux ;
@@ -275,28 +269,32 @@ Avant toute écriture :
 
 ## Phase 10 — Écriture Joomla
 
-Implémenter seulement après validation :
+Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. Les journaux du client ne contiennent pas le corps de ces anciennes réponses, donc leur détail ne peut pas être récupéré après coup via l'API standard. `apply.py` conserve désormais un extrait de la réponse HTTP pour les prochaines erreurs, en masquant le token. La cause serveur reste à déterminer à partir d'une future réponse détaillée ou des journaux Joomla/PHP.
 
 ```bash
-python apply.py --apply
+python apply.py 764 --apply
+python apply.py --all --apply
 ```
 
-- [ ] utiliser l'API Joomla ;
-- [ ] tester d'abord sur 2 ou 3 articles ;
-- [ ] envoyer l'ensemble final des tags voulu ;
-- [ ] préserver les tags existants ;
-- [ ] vérifier le format exact attendu par l'API Joomla 6 ;
-- [ ] gérer les erreurs HTTP proprement ;
-- [ ] ne pas écrire directement en base.
+- [x] utiliser l'API Joomla avec `PATCH` sur un article précis ;
+- [x] appliquer plusieurs articles et confirmer les états finaux par relecture API ;
+- [x] envoyer l'ensemble final des tags voulu ;
+- [x] préserver les tags existants par défaut et exiger une validation explicite pour leur retrait ;
+- [x] utiliser le endpoint PATCH documenté par l'API Joomla ;
+- [x] confirmer que le champ `tags` est enregistré sur l'instance Joomla 6 ;
+- [x] gérer les erreurs HTTP sans afficher le token ;
+- [x] relire l'article après PATCH pour vérifier les tags enregistrés ;
+- [x] après une erreur PATCH, relire l'article et distinguer succès effectif, absence de changement ou état inattendu ;
+- [x] ne pas écrire directement en base.
 
 ---
 
 ## Phase 11 — Logs
 
-Créer des logs du type :
+`apply.py` crée un journal avant le PATCH et le met à jour avec le résultat :
 
 ```text
-logs/apply-YYYY-MM-DD-HHMM.json
+logs/apply-YYYY-MM-DD-HHMMSS-article-ID.json
 ```
 
 Exemple :
@@ -309,10 +307,10 @@ Exemple :
 }
 ```
 
-- [ ] enregistrer l'état avant modification ;
-- [ ] enregistrer l'état après modification ;
-- [ ] enregistrer les erreurs ;
-- [ ] pouvoir identifier facilement les articles modifiés.
+- [x] enregistrer l'état avant modification ;
+- [x] enregistrer l'état après modification ;
+- [x] enregistrer les erreurs ;
+- [x] pouvoir identifier facilement les articles modifiés.
 
 ---
 

@@ -20,7 +20,7 @@ L'objectif est de construire un pipeline fiable qui :
 
 ## État actuel
 
-Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. Les exports par défaut sont écrits dans `data/`, ignoré par Git. La classification LLM et toute écriture Joomla restent à réaliser selon l'ordre décrit dans `TODO.md`.
+Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `classify.py <id>` propose les tags d'un seul article avec l'API OpenAI et ajoute le résultat à `data/proposals.json` ; cette étape ne modifie pas Joomla. `apply.py <id>` traite une proposition validée ; `apply.py --all` traite toutes les propositions validées une par une. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions par défaut sont écrits dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
 
 ---
 
@@ -50,6 +50,10 @@ Le modèle doit identifier :
 - l'activité principale ;
 - les caractéristiques réellement pertinentes ;
 - les tags qui décrivent effectivement le contenu de l'article.
+
+La catégorie Joomla est un indice fiable et fort du contexte de l'article. `Montagne été` et `Montagne hiver` indiquent fortement la saison et le cadre de la sortie ; `Canyoning` indique fortement que le canyon est au cœur du compte rendu. Utiliser ces catégories pour orienter l'interprétation des tags correspondants, en les confrontant au récit complet pour identifier l'activité précise.
+
+La marche d'approche, même longue ou difficile, ne justifie pas le tag `Randonnée` lorsqu'elle sert une activité principale comme la cascade de glace, l'escalade, le ski de randonnée, l'alpinisme ou le canyon. Une randonnée secondaire à ces activités dominantes ne justifie pas non plus le tag. `Randonnée` désigne un trek ou une randonnée pédestre pratiquée comme activité ; elle coexiste rarement avec ces tags et ne s'y ajoute que si un trek distinct est décrit de manière substantielle dans le compte rendu. Une mention incidente d'autres participants faisant une randonnée ne suffit pas. La randonnée hivernale à skis ou en raquettes relève de `Ski de Rando`.
 
 ---
 
@@ -327,10 +331,8 @@ Ne pas commencer par la partie écriture.
 ```bash
 python export.py
 python classify.py
-python apply.py --dry-run
-python apply.py --dry-run --article=123
-python apply.py --dry-run --tag=Corse
-python apply.py --apply
+python apply.py --all --dry-run
+python apply.py --all --apply
 python stats.py
 ```
 
