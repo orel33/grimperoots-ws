@@ -120,108 +120,51 @@ Ne pas utiliser pour une simple mention de la Corse.
 
 ---
 
-## Phase 5 — Classification LLM
+## Phase 5 — Analyse des articles par l’assistant
 
-Fournisseur retenu : API OpenAI, appelée avec le SDK Python officiel et l'API Responses. Utiliser une sortie structurée JSON Schema. Lire `OPENAI_API_KEY` depuis l'environnement et configurer le nom du modèle via `OPENAI_MODEL`; ne jamais versionner la clé. L'usage API est facturé séparément de ChatGPT. Choisir le modèle définitif après évaluation sur un échantillon représentatif.
+L’analyse est effectuée dans la conversation à partir des exports locaux. L’utilisateur demande un article ou un lot d’IDs ; l’assistant lit le texte complet de chaque article dans `data/articles.json`, les tags existants dans `data/tags.json` et les règles de `TAGS.md`.
 
-Le premier script traite un article à la fois. La procédure d'installation, de configuration et d'exécution est documentée dans `README.md`.
+L’analyse est sémantique : identifier l’activité et le lieu réels, utiliser la catégorie comme indice, ignorer les mentions incidentes et ne sélectionner que des tags présents dans l’export Joomla. L’assistant présente un diff compact et une justification concise.
 
-```bash
-python classify.py 802
-```
-
-`classify.py <ID>` lit `data/articles.json`, `data/tags.json`, et si disponibles `data/categories.json` et `data/authors.json`. Il transmet au modèle le contenu complet de l'article, les relations connues, la liste fermée des tags Joomla et leurs descriptions depuis `TAGS.md`. Le prompt de référence est `prompts/classify_article.md` ; le schéma de sortie est `schemas/classification.schema.json`.
-
-Le programme écrit ou met à jour l'entrée de cet article dans `data/proposals.json`. Il ne contacte Joomla que pour les exports effectués par les scripts `fetch_*`; la classification elle-même ne fait aucun appel d'écriture au site. `--dry-run` résume les données préparées sans appeler OpenAI ni créer de proposition.
-
-La clé `OPENAI_API_KEY` et le modèle `OPENAI_MODEL` doivent être configurés dans l'environnement, `.env` ou `.env.local`. Le SDK Python `openai` doit être installé. Les appels à l'API sont facturés indépendamment d'un abonnement ChatGPT.
-
-Pour chaque article, envoyer au modèle :
-- [x] titre ;
-- [x] catégorie ;
-- [x] date ;
-- [x] texte éditorial complet (`introtext`/`fulltext` si séparés, sinon champ combiné `text`) ;
-- [x] tags existants ;
-- [x] tags autorisés ;
-- [x] descriptions métier de `TAGS.md`.
-
-Règles du prompt :
-- [x] classification sémantique ;
-- [x] lecture de l'article complet ;
-- [x] pas de simple matching de mots-clés ;
-- [x] pas de tag pour une mention incidente ;
-- [x] aucun nouveau tag inventé ;
-- [x] possibilité de ne proposer aucun nouveau tag ;
-- [x] possibilité de signaler une ambiguïté ;
-- [x] conservation des tags existants.
+- [x] lire les articles complets depuis les exports locaux ;
+- [x] utiliser les règles métier dans `AGENTS.md` et `TAGS.md` ;
+- [ ] étendre progressivement l’échantillon analysé.
 
 ---
 
-## Phase 6 — Format de sortie
+## Phase 6 — Propositions JSON
 
-Utiliser une sortie JSON structurée. Le schéma de sortie est préparé dans `schemas/classification.schema.json`.
+Après analyse, l’assistant ajoute ou met à jour les entrées correspondantes dans `data/proposals.json` avec `review.status=pending`. Ce fichier reste local et ignoré par Git. Il conserve pour chaque article les tags de départ, les tags proposés, les incertitudes et, après autorisation du lot, les tags finaux et les suppressions explicitement acceptées.
 
-Exemple :
-
-```json
-{
-  "article_id": 123,
-  "suggested_tags": [
-    {
-      "id": 12,
-      "confidence": 0.98
-    }
-  ],
-  "uncertain_tags": [
-    {
-      "id": 25,
-      "confidence": 0.55,
-      "reason": "Le lieu est mentionné mais ne semble pas être le lieu principal."
-    }
-  ]
-}
-```
-
-- [x] Demander une sortie OpenAI Structured Outputs conforme au schéma et vérifier localement les IDs de tags et les champs reçus.
-- [x] Signaler les erreurs d'entrée, de réponse et d'appel API.
-- [x] Relancer un article précis avec `python classify.py <ID>`.
-
----
-
-## Phase 7 — Génération de `proposals.json`
-
-`classify.py <ID>` crée ou met à jour l'entrée de l'article dans :
-
-```text
-data/proposals.json
-```
-
-Exemple :
+Exemple simplifié :
 
 ```json
 {
-  "123": {
-    "title": "Traversée de Bavella",
-    "existing_tags": [18],
-    "suggested_tags": [12, 18],
-    "new_tags": [12],
-    "uncertain_tags": []
+  "802": {
+    "title": "Compte rendu de sortie",
+    "existing_tags": [20, 21],
+    "suggested_tags": [33],
+    "new_tags": [33],
+    "uncertain_tags": [],
+    "review": {
+      "status": "pending"
+    }
   }
 }
 ```
 
-Règle :
+- [x] distinguer tags existants, ajouts, incertitudes et retraits validés ;
+- [x] ne jamais inventer un tag Joomla ;
+- [x] conserver les tags existants par défaut ;
+- [x] documenter les décisions après autorisation dans la proposition.
 
-```text
-tags_finaux = tags_existants UNION tags_validés
-```
+---
 
-- [x] Ne jamais supprimer automatiquement les tags existants.
-- [x] Distinguer clairement :
-  - tags existants ;
-  - tags proposés ;
-  - nouveaux tags ;
-  - tags incertains.
+## Phase 7 — Revue et application par lot
+
+L’assistant présente le résumé des changements avant application et enregistre les propositions en attente. L’utilisateur autorise explicitement le lot ; l’assistant marque les articles retenus `review.status=validated`, puis seuls ceux-ci sont traités par `apply.py`. Après application, une revue de qualité peut conduire à corriger les propositions et à envoyer un nouveau lot.
+
+La création d’un tag reste manuelle dans Joomla. Après sa création, rafraîchir `data/tags.json`, documenter l’ID dans `TAGS.md`, puis l’ajouter aux propositions concernées.
 
 ---
 
@@ -254,18 +197,18 @@ Affichage souhaité :
 
 ## Phase 9 — Validation manuelle
 
-État au 8 octobre 2026 : 18 comptes rendus ont fait l’objet d’une revue humaine et leurs propositions sont validées dans `data/proposals.json`. Dix CR supplémentaires ont été lus intégralement après les huit premiers. Pour cet échantillon, `classify.py` n’a pas été utilisé : son SDK manque dans l’environnement et les articles ont été analysés manuellement. Cette revue reste un échantillon initial, inférieur à la cible de 20 à 50 articles.
+État au 8 octobre 2026 : 18 comptes rendus ont fait l’objet d’une revue dans la conversation et leurs propositions ont été appliquées. Les articles ont été lus depuis les exports locaux. Une revue de qualité complémentaire après application reste prévue.
 
-Avant d’étendre la classification à tout le corpus :
+Pour la revue de qualité après application :
 
-- [ ] contrôler entre 20 et 50 articles (18 articles discutés/validés à ce jour) ;
+- [ ] contrôler un échantillon de 20 à 50 articles après application (18 articles discutés/validés à ce jour) ;
 - [ ] vérifier plusieurs types de sorties ;
 - [ ] vérifier les articles courts ;
 - [ ] vérifier les articles contenant plusieurs lieux ;
 - [ ] vérifier les mentions incidentes ;
 - [ ] vérifier les articles avec plusieurs activités ;
-- [ ] corriger le prompt si nécessaire ;
-- [ ] relancer la classification avant de passer à l'écriture.
+- [ ] corriger les règles dans `AGENTS.md` ou `TAGS.md` si nécessaire ;
+- [ ] corriger les règles ou propositions si la revue révèle des erreurs.
 
 ---
 
@@ -359,17 +302,6 @@ Tags proposés               : 1248
 
 ---
 
-## Priorité immédiate
+## Suite immédiate
 
-Commencer uniquement par :
-
-```text
-Joomla API
-    ↓
-Export JSON local
-```
-
-Aucune écriture Joomla tant que :
-- l'export n'est pas fiable ;
-- les tags existants ne sont pas correctement lus ;
-- la classification n'a pas été validée manuellement.
+Les exports, propositions locales et scripts d'application sont en place. Continuer l'analyse des comptes rendus par lots à partir de `data/articles.json`, enregistrer les propositions en attente, puis appliquer uniquement les lots explicitement autorisés. Prévoir ensuite la revue de qualité décrite en phase 9.

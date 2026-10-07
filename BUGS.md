@@ -26,7 +26,7 @@ La même incompatibilité de `Route::_()` avec le routeur API est décrite dans 
 ### Impact observé
 
 - Les relectures API après les PATCH ont confirmé les tags finaux sur les huit articles traités.
-- Le PATCH du classificateur n'envoie que l'ID et la liste des tags ; l'article existant est chargé avant son enregistrement. Rien dans cette trace n'indique une altération du texte du compte rendu.
+- Le PATCH envoyé par `apply.py` ne contient que l'ID et la liste des tags ; l'article existant est chargé avant son enregistrement. Rien dans cette trace n'indique une altération du texte du compte rendu.
 - Le callback échoue pendant le rafraîchissement des métadonnées JComments de l'article, avant l'appel qui les écrit. Les lignes des commentaires ne sont pas modifiées par ce chemin de code ; aucune perte de commentaire n'a été observée.
 - L'horodatage `modified` de l'article est actualisé lors du PATCH.
 - Une réponse HTTP 500 ne signifie donc pas, à elle seule, que les tags n'ont pas été enregistrés. `apply.py` relit l'article après une erreur pour vérifier son état.

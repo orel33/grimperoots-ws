@@ -9,18 +9,18 @@ Le site contient environ :
 - 40 000 photos ;
 - 60 comptes utilisateurs.
 
-L'objectif est de construire un pipeline fiable qui :
+L'objectif est de construire un processus fiable qui :
 
 1. récupère les tags Joomla existants ;
 2. récupère les articles via l'API Joomla ;
-3. fait lire chaque article complet à un LLM ;
-4. propose une liste de tags pertinente pour chaque article ;
-5. permet une validation avant toute modification ;
-6. applique ensuite les tags validés via l'API Joomla.
+3. fait analyser chaque article complet par l'assistant depuis les fichiers locaux ;
+4. prépare les propositions dans `data/proposals.json` ;
+5. applique seulement un lot explicitement autorisé via l'API Joomla ;
+6. permet une revue de qualité après application et corrige les propositions si nécessaire.
 
 ## État actuel
 
-Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `classify.py <id>` propose les tags d'un seul article avec l'API OpenAI et ajoute le résultat à `data/proposals.json` ; cette étape ne modifie pas Joomla. `apply.py <id>` traite une proposition validée ; `apply.py --all` traite toutes les propositions validées une par une. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions par défaut sont écrits dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
+Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). L'assistant analyse les articles directement dans les exports locaux et prépare les propositions dans `data/proposals.json` ; aucune API OpenAI n'est utilisée par le dépôt. `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `apply.py <id>` traite une proposition validée ; `apply.py --all` traite toutes les propositions validées une par une. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions sont dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
 
 ---
 
@@ -28,9 +28,9 @@ Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et
 
 ### 1. Ne jamais travailler par simple détection de mots-clés
 
-La classification doit être **sémantique**.
+L'analyse doit être **sémantique**.
 
-Le LLM doit lire le contenu complet de l'article et répondre à la question :
+L'assistant doit lire le contenu complet de l'article et répondre à la question :
 
 > Quels tags décrivent réellement cette sortie ?
 
@@ -45,7 +45,7 @@ Exemple :
 > Un article décrivant une sortie en Corse peut mentionner le Vignemale à titre de comparaison.  
 > Cette mention ne doit pas provoquer l'ajout des tags `Vignemale` ou `Pyrénées`.
 
-Le modèle doit identifier :
+L'analyse doit identifier :
 - le lieu réel de la sortie ;
 - l'activité principale ;
 - les caractéristiques réellement pertinentes ;
@@ -67,7 +67,7 @@ Les tags autorisés sont ceux :
 - récupérés depuis Joomla ;
 - éventuellement documentés dans un fichier `TAGS.md`.
 
-Le LLM doit choisir uniquement parmi cette liste fermée.
+L'assistant doit choisir uniquement parmi cette liste fermée.
 
 ---
 
@@ -151,7 +151,7 @@ Joomla 6 API
 Données locales JSON
      |
      v
-Classification LLM
+Analyse de l'assistant depuis les fichiers locaux
      |
      v
 proposals.json
@@ -182,7 +182,7 @@ Pour chaque article, récupérer au minimum :
 }
 ```
 
-Le LLM doit recevoir au minimum :
+L'assistant doit lire au minimum :
 - le titre ;
 - la catégorie Joomla ;
 - la date ;
@@ -196,11 +196,13 @@ Ne pas télécharger les images pour la première version du système.
 
 ---
 
-## Classification LLM
+## Analyse sémantique par l'assistant
 
-Utiliser l'API OpenAI depuis le script, avec le SDK Python officiel et l'API Responses. Le dépôt ne peut pas appeler directement l'assistant de cette conversation : il lui faut une clé API (`OPENAI_API_KEY`), gérée séparément de `JOOMLA_TOKEN` et jamais versionnée. Le modèle sera configurable via `OPENAI_MODEL`, sans être codé en dur. La classification doit demander une sortie structurée conforme à un schéma JSON défini par le projet. L'API OpenAI est facturée séparément d'un abonnement ChatGPT.
+L'assistant travaille à partir des exports présents dans `data/`. Ne pas appeler l'API OpenAI, ne pas transmettre le contenu à un service de classification externe et ne demander ni clé OpenAI ni SDK.
 
-Le prompt doit rappeler explicitement les règles suivantes :
+Pour chaque article demandé par l'utilisateur, lire le texte complet ainsi que le titre, la catégorie, la date et les tags actuels. Comparer les faits de l'article à la liste fermée des tags de `data/tags.json` et à leurs descriptions dans `TAGS.md`. Produire une proposition courte dans `data/proposals.json` avec `review.status=pending`, puis présenter les associations et retraits envisagés dans un tableau `+Tag` / `-Tag`. Les ajouts sont proposés par défaut ; les retraits restent exclus, sauf demande ou validation explicite de l'utilisateur.
+
+L'analyse doit suivre ces règles :
 
 - lire l'article dans son ensemble ;
 - sélectionner uniquement les tags décrivant réellement la sortie ;
@@ -212,40 +214,15 @@ Le prompt doit rappeler explicitement les règles suivantes :
 - pouvoir signaler les cas ambigus ;
 - préserver les tags existants.
 
-La sortie doit être structurée en JSON.
+Les propositions locales suivent le format JSON de `data/proposals.json`. Ajouter ou mettre à jour une entrée par ID d'article sans remplacer les entrées des autres articles. Une proposition en attente inclut `title`, `existing_tags`, `suggested_tags`, `new_tags`, `uncertain_tags` et un objet `review` de statut `pending`. Ne pas ajouter de métadonnées propres à un modèle ou à une API de classification.
 
-Exemple :
-
-```json
-{
-  "article_id": 123,
-  "suggested_tags": [
-    {
-      "id": 12,
-      "confidence": 0.98
-    },
-    {
-      "id": 18,
-      "confidence": 0.91
-    }
-  ],
-  "uncertain_tags": [
-    {
-      "id": 25,
-      "confidence": 0.55,
-      "reason": "Le lieu est cité mais ne semble pas être le lieu principal de la sortie."
-    }
-  ]
-}
-```
-
-Éviter les longues explications libres.
+Garder les propositions courtes ; les raisons et les arbitrages sont présentés dans la conversation ou dans `review.notes` après validation.
 
 ---
 
 ## Validation
 
-Aucune proposition ne doit être appliquée directement après classification.
+Aucune proposition ne doit être appliquée automatiquement après analyse. Les propositions préparées par l'assistant restent en attente (`review.status=pending`) et ne sont pas traitées par `apply.py`. L'assistant affiche le diff du lot ; après autorisation explicite de l'utilisateur, il marque les propositions retenues `review.status=validated`, renseigne `review.final_tags` et les retraits explicitement acceptés, puis lance d'abord un dry-run. Toute écriture exige ensuite `--apply`. Une revue de qualité approfondie peut être faite après l'application du lot.
 
 Le pipeline doit produire un fichier du type :
 
@@ -262,12 +239,15 @@ Exemple :
     "existing_tags": [18],
     "suggested_tags": [12, 18],
     "new_tags": [12],
-    "uncertain_tags": []
+    "uncertain_tags": [],
+    "review": {
+      "status": "pending"
+    }
   }
 }
 ```
 
-Avant tout `--apply`, prévoir une inspection manuelle d'un échantillon représentatif d'environ 20 à 50 articles.
+Après application d'un lot, prévoir une revue de qualité d'un échantillon représentatif d'environ 20 à 50 articles au fil de l'avancement. Les propositions et journaux permettent de corriger les tags lors d'un lot ultérieur.
 
 Tester notamment :
 - sorties clairement géolocalisées ;
@@ -314,13 +294,13 @@ Respecter cet ordre :
 2. export local des tags ;
 3. export local des articles ;
 4. génération des fichiers JSON ;
-5. classification LLM ;
-6. génération de `proposals.json` ;
+5. analyse des articles par l'assistant depuis les exports locaux ;
+6. enregistrement des propositions en attente dans `data/proposals.json` ;
 7. mode `--dry-run` ;
-8. validation manuelle ;
-9. implémentation du `PATCH` Joomla ;
-10. mode `--apply` ;
-11. logs et rollback.
+8. autorisation explicite du lot, puis validation des propositions retenues ;
+9. `PATCH` Joomla et vérification par relecture ;
+10. revue de qualité après application ;
+11. journaux et rollback.
 
 Ne pas commencer par la partie écriture.
 
@@ -332,7 +312,6 @@ Ne pas commencer par la partie écriture.
 
 ```bash
 python export.py
-python classify.py
 python apply.py --all --dry-run
 python apply.py --all --apply
 python stats.py
@@ -344,7 +323,7 @@ python stats.py
 
 - privilégier du code simple et lisible ;
 - éviter les dépendances inutiles ;
-- séparer clairement lecture, classification et écriture ;
+- séparer clairement lecture, analyse et écriture ;
 - produire des erreurs explicites ;
 - rendre les opérations idempotentes autant que possible ;
 - conserver les données locales nécessaires au débogage ;
