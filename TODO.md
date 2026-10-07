@@ -269,7 +269,9 @@ Avant toute écriture :
 
 ## Phase 10 — Écriture Joomla
 
-Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. Un PATCH identique autorisé sur le CR 795 a capturé le corps JSON `{"errors":{"code":500,"title":"Internal server error"}}` ; la relecture confirme toujours `[33, 36]`. La réponse API reste générique et ne révèle pas l'exception ni sa trace. `apply.py` conserve désormais un extrait de la réponse HTTP pour les prochaines erreurs, en masquant le token. La cause serveur reste à déterminer à partir des journaux Joomla/PHP ou du serveur web, qui ne sont pas accessibles via l'API Web Services standard.
+Le mode global `--all --apply` a été lancé sur les 8 propositions validées le 8 octobre 2026. Sept articles ont été modifiés ; le CR 764 était déjà conforme. Pour les sept PATCH, Joomla a répondu HTTP 500, mais chaque relecture API a confirmé les tags finaux. La trace récupérée par FTP après un PATCH identique sur le CR 795 montre que le plugin de contenu `JComments` plante pendant `onContentAfterSave` : il appelle `Route::_()` dans le contexte API, ce qui aboutit à `Call to undefined method Joomla\CMS\Router\ApiRouter::build()`. Le manifeste installé indique JComments 5.0.6 et le journal Joomla indique Joomla 6.1.4. La sauvegarde de l'article et des tags a lieu avant cette erreur post-save ; une relecture confirme `[33, 36]`. Le corps HTTP reste générique (`{"errors":{"code":500,"title":"Internal server error"}}`).
+
+Prochaine action d'écriture à différer jusqu'à correction ou contournement contrôlé du plugin : vérifier une mise à jour compatible de Joomla/JComments ou appliquer une correction au plugin en environnement de test, puis confirmer qu'un PATCH ne renvoie plus 500.
 
 ```bash
 python apply.py 764 --apply
