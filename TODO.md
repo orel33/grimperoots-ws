@@ -32,10 +32,10 @@ grimperoots-indexer/
 - [x] Lire le token depuis `JOOMLA_TOKEN` (environnement, `.env` ou `.env.local`).
 - [x] Ne jamais versionner le token ; les fichiers `.env*` sont ignorés.
 - [x] Tester la récupération des tags.
-- [ ] Tester la récupération de la liste des articles.
+- [x] Tester la récupération de la liste des articles (684 articles récupérés).
 - [x] Tester la récupération d'un article précis (article 22).
-- [x] Implémenter la pagination pour les exports de tags, catégories et auteurs.
-- [ ] Vérifier la pagination avec une collection qui dépasse la limite d'une page.
+- [x] Implémenter la pagination pour les exports de tags, catégories, auteurs et articles.
+- [x] Vérifier la pagination avec une collection qui dépasse la limite d'une page (export de 684 articles).
 - [x] Tester la récupération des catégories et des auteurs.
 
 Endpoints à tester :
@@ -50,7 +50,7 @@ GET /api/index.php/v1/content/articles/{id}
 
 ## Phase 3 — Export local
 
-Créer un script d'export global (à faire) :
+Un script d'export global reste à créer pour orchestrer ces commandes :
 
 ```bash
 python export.py
@@ -59,11 +59,12 @@ python export.py
 Il doit :
 
 - [x] récupérer tous les tags (`fetch_tags.py`) ;
-- [ ] récupérer tous les articles ;
+- [x] récupérer tous les articles (`fetch_articles.py`) ;
 - [x] sauvegarder les tags dans `data/tags.json` ;
-- [ ] sauvegarder les articles dans `data/articles/`.
+- [x] sauvegarder la réponse complète dans `data/articles.json` ;
+- [ ] découper/normaliser les articles dans `data/articles/{id}.json` si ce format reste nécessaire.
 
-Exports complémentaires déjà disponibles : `fetch_categories.py` produit `data/categories.json`, `fetch_authors.py` produit `data/authors.json` (ID et nom uniquement), et `fetch_article.py` récupère un article individuel avec ses relations Joomla. L'ID de catégorie et l'ID de l'auteur restent associés dans le JSON de l'article ; la résolution des noms dans cet export reste à intégrer.
+Exports complémentaires déjà disponibles : `fetch_categories.py` produit `data/categories.json`, `fetch_authors.py` produit `data/authors.json` (ID et nom uniquement), et `fetch_article.py` récupère un article individuel avec ses relations Joomla dans `data/`. `render_article.py` génère les pages HTML à partir de ces exports dans `output/`.
 
 Structure cible :
 
@@ -92,7 +93,7 @@ Pour chaque article, conserver au minimum :
 ```
 
 - [x] Vérifier que les tags existants sont bien récupérés sur l'article individuel.
-- [ ] Ne pas télécharger les images.
+- [x] Ne pas télécharger les images pendant les exports ; conserver les références distantes de Joomla.
 
 ---
 
