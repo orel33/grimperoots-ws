@@ -32,12 +32,10 @@ video {
   height: auto;
 }
 
-article p > img:only-child,
-article div > img:only-child,
-article figure > img:only-child,
-article p > a:only-child > img:only-child,
-article div > a:only-child > img:only-child,
-article figure > a:only-child > img:only-child {
+article > p > img:only-child,
+article > figure > img:only-child,
+article > p > a:only-child > img:only-child,
+article > figure > a:only-child > img:only-child {
   display: block;
   width: auto;
   height: auto;
