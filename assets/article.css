@@ -1,0 +1,59 @@
+body {
+  max-width: 900px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #222;
+  font: 1rem/1.6 sans-serif;
+}
+
+header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #bbb;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+dt {
+  font-weight: 700;
+}
+
+dd {
+  margin: 0;
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+article p > img:only-child,
+article div > img:only-child,
+article figure > img:only-child,
+article p > a:only-child > img:only-child,
+article div > a:only-child > img:only-child,
+article figure > a:only-child > img:only-child {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(900px, 100%);
+  max-height: 900px;
+  margin-inline: auto;
+  object-fit: contain;
+}
+
+table {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+td,
+th {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #ccc;
+}

@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""Fetch all Joomla tags through the read-only Web Services API."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shlex
+import ssl
+import sys
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.request import Request, urlopen
+
+
+ENV_KEYS = ("JOOMLA_BASE_URL", "JOOMLA_TOKEN")
+DEFAULT_OUTPUT = Path("data/tags.json")
+PAGE_SIZE = 100
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    """Read the Joomla settings from a small dotenv-style file."""
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, separator, raw_value = line.partition("=")
+        key = key.strip()
+        if not separator or key not in ENV_KEYS:
+            continue
+        try:
+            parts = shlex.split(raw_value, comments=True, posix=True)
+        except ValueError as error:
+            raise ValueError(f"Invalid value for {key} in {path}") from error
+        values[key] = parts[0] if parts else ""
+    return values
+
+
+def load_settings() -> dict[str, str]:
+    """Load .env, then .env.local, with the process environment taking priority."""
+    settings: dict[str, str] = {}
+    for filename in (".env", ".env.local"):
+        settings.update(read_env_file(Path(filename)))
+    settings.update({key: os.environ[key] for key in ENV_KEYS if os.environ.get(key)})
+    return settings
+
+
+def tags_endpoint(base_url: str) -> str:
+    base_url = base_url.rstrip("/")
+    path = urlsplit(base_url).path.rstrip("/")
+    if path.endswith("/api/index.php/v1"):
+        return f"{base_url}/tags"
+    if path.endswith("/api/index.php"):
+        return f"{base_url}/v1/tags"
+    return f"{base_url}/api/index.php/v1/tags"
+
+
+def create_ssl_context() -> ssl.SSLContext:
+    """Use Python's configured CA file, or a standard OS bundle if it is missing."""
+    default_paths = ssl.get_default_verify_paths()
+    candidates = (
+        os.environ.get("SSL_CERT_FILE"),
+        default_paths.cafile,
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/cert.pem",
+    )
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return ssl.create_default_context(cafile=candidate)
+    if default_paths.capath and Path(default_paths.capath).is_dir():
+        return ssl.create_default_context(capath=default_paths.capath)
+    return ssl.create_default_context()
+
+
+def get_page(url: str, token: str, ssl_context: ssl.SSLContext) -> dict:
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/vnd.api+json",
+            "X-Joomla-Token": token,
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=30, context=ssl_context) as response:
+            payload = json.loads(response.read())
+    except HTTPError as error:
+        print(
+            f"Joomla returned HTTP {error.code} ({error.reason}) while fetching tags.",
+            file=sys.stderr,
+        )
+        if error.code == 401:
+            print("Check the token and API login permissions.", file=sys.stderr)
+        raise RuntimeError("Joomla API request failed") from error
+    except URLError as error:
+        reason = error.reason
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            print(
+                "TLS certificate verification failed. Fix the server certificate or local CA trust; "
+                "certificate verification remains enabled.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Could not reach Joomla: {reason}", file=sys.stderr)
+        raise RuntimeError("Joomla API request failed") from error
+    except (TimeoutError, json.JSONDecodeError) as error:
+        print(f"Request failed: {error}", file=sys.stderr)
+        raise RuntimeError("Joomla API request failed") from error
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("Joomla returned an unexpected JSON shape.")
+    return payload
+
+
+def fetch_all_tags(base_url: str, token: str) -> list[dict]:
+    """Fetch every page and return Joomla JSON:API tag resources."""
+    endpoint = tags_endpoint(base_url)
+    first_page = endpoint + "?" + urlencode({"page[limit]": PAGE_SIZE})
+    allowed_origin = urlsplit(endpoint)[:2]
+    next_url: str | None = first_page
+    seen_pages: set[str] = set()
+    seen_ids: set[str] = set()
+    tags: list[dict] = []
+    ssl_context = create_ssl_context()
+
+    while next_url:
+        parts = urlsplit(next_url)
+        if parts[:2] != allowed_origin or parts.scheme != "https":
+            raise RuntimeError("Joomla returned an unsafe pagination URL; refusing to send the token.")
+        if next_url in seen_pages:
+            raise RuntimeError("Joomla returned a pagination loop while fetching tags.")
+        seen_pages.add(next_url)
+
+        payload = get_page(next_url, token, ssl_context)
+        resources = payload.get("data", payload)
+        if not isinstance(resources, list):
+            raise RuntimeError("Joomla returned an unexpected tags collection.")
+
+        for resource in resources:
+            if not isinstance(resource, dict):
+                raise RuntimeError("Joomla returned an unexpected tag resource.")
+            resource_id = resource.get("id")
+            if resource_id is None:
+                raise RuntimeError("Joomla returned a tag without an ID.")
+            tag_id = str(resource_id)
+            if tag_id in seen_ids:
+                continue
+            seen_ids.add(tag_id)
+            tags.append(resource)
+
+        links = payload.get("links", {})
+        next_link = links.get("next") if isinstance(links, dict) else None
+        next_url = urljoin(next_url, next_link) if isinstance(next_link, str) and next_link else None
+
+    return tags
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Fetch all Joomla tags through the read-only Web Services API."
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help=f"Save the tags JSON response (default: {DEFAULT_OUTPUT}).",
+    )
+    args = parser.parse_args()
+
+    try:
+        settings = load_settings()
+    except (OSError, ValueError) as error:
+        print(f"Configuration error: {error}", file=sys.stderr)
+        return 2
+
+    base_url = settings.get("JOOMLA_BASE_URL", "").strip()
+    token = settings.get("JOOMLA_TOKEN", "").strip()
+    if not base_url or not token:
+        print(
+            "Set JOOMLA_BASE_URL and JOOMLA_TOKEN in the environment, .env, or .env.local.",
+            file=sys.stderr,
+        )
+        return 2
+
+    parsed_base = urlsplit(base_url)
+    if parsed_base.scheme not in ("http", "https") or not parsed_base.netloc:
+        print("JOOMLA_BASE_URL must be an http(s) URL.", file=sys.stderr)
+        return 2
+    if parsed_base.scheme != "https":
+        print("Refusing to send the Joomla token over plain HTTP.", file=sys.stderr)
+        return 2
+
+    try:
+        tags = fetch_all_tags(base_url, token)
+    except RuntimeError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"Could not read TLS configuration or complete request: {error}", file=sys.stderr)
+        return 1
+
+    output = json.dumps(
+        {"data": tags, "meta": {"count": len(tags)}}, ensure_ascii=False, indent=2
+    ) + "\n"
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(output, encoding="utf-8")
+    except OSError as error:
+        print(f"Could not write {args.output}: {error}", file=sys.stderr)
+        return 1
+
+    print(f"Fetched {len(tags)} Joomla tags; saved {args.output}.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

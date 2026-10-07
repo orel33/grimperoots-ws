@@ -2,15 +2,15 @@
 
 ## Phase 1 — Initialisation du projet
 
-- [ ] Initialiser le dépôt Git.
-- [ ] Créer ou compléter `AGENTS.md`.
-- [ ] Créer `.gitignore`.
-- [ ] Ignorer au minimum :
+- [x] Initialiser le dépôt Git.
+- [x] Créer ou compléter `AGENTS.md`.
+- [x] Créer `.gitignore`.
+- [x] Ignorer au minimum :
   - `.env`
   - fichiers contenant des tokens ;
-  - caches Python ;
+  - caches Python et données locales (`data/`) ;
   - éventuels fichiers temporaires.
-- [ ] Préparer une arborescence simple :
+- [ ] Compléter l'arborescence cible (`src/`, `logs/`, etc.) si le projet en a besoin :
 
 ```text
 grimperoots-indexer/
@@ -27,14 +27,16 @@ grimperoots-indexer/
 
 ## Phase 2 — Accès API Joomla
 
-- [ ] Vérifier les endpoints Joomla 6 disponibles.
-- [ ] Mettre en place l'authentification par token.
-- [ ] Lire le token depuis `JOOMLA_TOKEN`.
-- [ ] Ne jamais versionner le token.
-- [ ] Tester la récupération des tags.
+- [x] Vérifier les endpoints Joomla 6 utilisés (tags, catégories, utilisateurs et article individuel).
+- [x] Mettre en place l'authentification par token.
+- [x] Lire le token depuis `JOOMLA_TOKEN` (environnement, `.env` ou `.env.local`).
+- [x] Ne jamais versionner le token ; les fichiers `.env*` sont ignorés.
+- [x] Tester la récupération des tags.
 - [ ] Tester la récupération de la liste des articles.
-- [ ] Tester la récupération d'un article précis.
-- [ ] Gérer la pagination.
+- [x] Tester la récupération d'un article précis (article 22).
+- [x] Implémenter la pagination pour les exports de tags, catégories et auteurs.
+- [ ] Vérifier la pagination avec une collection qui dépasse la limite d'une page.
+- [x] Tester la récupération des catégories et des auteurs.
 
 Endpoints à tester :
 
@@ -48,7 +50,7 @@ GET /api/index.php/v1/content/articles/{id}
 
 ## Phase 3 — Export local
 
-Créer un script :
+Créer un script d'export global (à faire) :
 
 ```bash
 python export.py
@@ -56,10 +58,12 @@ python export.py
 
 Il doit :
 
-- [ ] récupérer tous les tags ;
+- [x] récupérer tous les tags (`fetch_tags.py`) ;
 - [ ] récupérer tous les articles ;
-- [ ] sauvegarder les tags dans `data/tags.json` ;
+- [x] sauvegarder les tags dans `data/tags.json` ;
 - [ ] sauvegarder les articles dans `data/articles/`.
+
+Exports complémentaires déjà disponibles : `fetch_categories.py` produit `data/categories.json`, `fetch_authors.py` produit `data/authors.json` (ID et nom uniquement), et `fetch_article.py` récupère un article individuel avec ses relations Joomla. L'ID de catégorie et l'ID de l'auteur restent associés dans le JSON de l'article ; la résolution des noms dans cet export reste à intégrer.
 
 Structure cible :
 
@@ -87,7 +91,7 @@ Pour chaque article, conserver au minimum :
 }
 ```
 
-- [ ] Vérifier que les tags existants sont bien récupérés.
+- [x] Vérifier que les tags existants sont bien récupérés sur l'article individuel.
 - [ ] Ne pas télécharger les images.
 
 ---

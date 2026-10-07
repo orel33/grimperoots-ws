@@ -18,6 +18,10 @@ L'objectif est de construire un pipeline fiable qui :
 5. permet une validation avant toute modification ;
 6. applique ensuite les tags validés via l'API Joomla.
 
+## État actuel
+
+Les scripts en place couvrent la lecture d'un article (`fetch_article.py`) et l'export des tags, catégories et comptes auteurs (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`). Les exports par défaut sont écrits dans `data/`, ignoré par Git. L'export de masse des articles, la classification LLM et toute écriture Joomla restent à réaliser selon l'ordre décrit dans `TODO.md`.
+
 ---
 
 ## Principes impératifs
