@@ -32,6 +32,48 @@ python3 fetch_articles.py
 
 Les scripts exportent vers `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ils utilisent l’API Joomla en lecture seule.
 
+### Lire un article depuis la base de l'hébergement mutualisé
+
+La base OVH mutualisée n'étant pas accessible depuis l'extérieur, `fetch_article_from_db.py` utilise un relais PHP temporaire. Le mode par défaut est une simulation et ne contacte pas l'hébergement :
+
+```bash
+./fetch_article_from_db.py 34
+```
+
+Pour effectuer la lecture, il faut utiliser `--apply` :
+
+```bash
+./fetch_article_from_db.py 34 --apply
+```
+
+Le script dépose par FTP un fichier PHP au nom aléatoire dans `REMOTE_ROOT`, appelle ce fichier sur `SITE_URL` en HTTPS, puis le supprime par FTP. Le PHP charge `configuration.php` et exécute uniquement des `SELECT` paramétrés sur l'article, sa catégorie et ses tags. Si la suppression échoue, le script affiche un avertissement : supprime alors le fichier `fetch-article-*.php` restant dans la racine Joomla via FTP.
+
+La sortie JSON est écrite sur stdout. Pour l'enregistrer localement :
+
+```bash
+./fetch_article_from_db.py 34 --apply --output data/article-34.json
+```
+
+Les paramètres requis sont `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, `SITE_URL` (URL HTTPS de l'installation Joomla) et `REMOTE_ROOT` (racine distante qui contient `configuration.php`), dans `.env.local` ou dans l'environnement. Le script utilise FTPS si `FTP_PLAIN` n'est pas activé. Aucun connecteur Python ni connexion MySQL depuis le poste local n'est requis. Les erreurs n'affichent pas le mot de passe FTP.
+
+Le JSON est un objet plat contenant `id`, `title`, `alias`, `category_id`, `category`, `created`, `introtext`, `fulltext` et `existing_tags`. `introtext` et `fulltext` sont les champs HTML bruts stockés en base ; le script ne lance pas les plugins de contenu Joomla. Ainsi, si un article stocke une directive telle que `{gallery}`, elle reste telle quelle dans le texte SQL. À l'inverse, `data/articles.json` provient de l'API Joomla et place le texte dans `attributes.text` ; l'export local consulté contient du HTML de galerie SIGPlus rendu (653 articles avec `sigplus-gallery`, aucun `{gallery}` littéral). Le HTML, les entités (`&eacute;`) et les directives de plugins ne sont pas normalisés par le script SQL.
+
+Exemple de forme de sortie :
+
+```json
+{
+  "id": 34,
+  "title": "Titre de l'article",
+  "alias": "8",
+  "category_id": 14,
+  "category": "Montagne hiver",
+  "created": "2007-02-07 17:17:17",
+  "introtext": "<p>Texte d'introduction…</p>",
+  "fulltext": "<p>Texte complet…</p>",
+  "existing_tags": [25, 28, 33, 35, 36]
+}
+```
+
 ## Faire analyser des articles
 
 Demande à l’assistant d’analyser un ou plusieurs IDs à partir des exports de `data/`. Il lit l’article en entier, vérifie la catégorie, les tags existants et `TAGS.md`, puis présente un diff `+Tag` / `-Tag` avec une justification concise. Chaque proposition contient l’état initial complet `existing_tags`, la cible complète `final_tags` et un `status`. Une suggestion de l’assistant commence en `pending`. Les retraits doivent être explicitement demandés ou validés.
