@@ -7,6 +7,7 @@ Ce dépôt exporte les articles et les tags du site Joomla 6 Grimperoots. L’as
 - Les exports Joomla, le référentiel des tags et les propositions sont dans `data/`, ignoré par Git.
 - `TAGS.md` décrit les tags disponibles et leurs règles métier.
 - L’analyse sémantique est faite dans la conversation à partir du texte complet exporté ; aucune clé ni dépendance de classification externe n’est nécessaire.
+- `apply.py <ID> --review` permet de passer interactivement une proposition de `pending` à `ready` ou inversement ; `apply.py --review --all` propose une revue individuelle ou un changement de statut en lot. Ce mode reste local et ignore les propositions `applied`.
 - `apply.py <ID>` inspecte une proposition `ready` ; `apply.py --all` traite uniquement les propositions `ready`. Sans `--apply`, les commandes simulent les changements.
 
 ## Prérequis et configuration
@@ -65,6 +66,15 @@ python3 init_proposals.py
 `init_proposals.py` archive le fichier existant dans `data/archive/proposals-<horodatage>.json` puis crée `data/proposals.json` avec `{}`. Le nouveau fichier se remplit uniquement avec les articles analysés pendant le cycle. Les tags courants de tous les articles restent disponibles dans `data/articles.json` ; ils n'ont pas à être dupliqués dans les propositions. La commande ne contacte pas Joomla. Si le fichier est déjà vide, elle le laisse tel quel et ne crée pas d'archive vide.
 
 ## Appliquer les propositions
+
+Pour examiner une proposition et modifier son statut après validation :
+
+```bash
+python3 apply.py 764 --review
+python3 apply.py --review --all
+```
+
+Le mode interactif affiche le titre, les tags existants et cibles, le diff et les notes. Avec `--all`, tu peux passer toutes les propositions `pending` à `ready`, toutes les `ready` à `pending`, ou décider article par article. Les propositions `applied` sont protégées. `--review` ne contacte pas Joomla et nécessite un terminal interactif.
 
 Commence par inspecter le lot :
 

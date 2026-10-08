@@ -427,6 +427,194 @@ def names_for(ids: list[int], tag_names: dict[int, str]) -> list[str]:
     return [f"{tag_names.get(tag_id, 'Tag inconnu')} ({tag_id})" for tag_id in ids]
 
 
+def load_article_titles(path: Path) -> dict[int, str]:
+    payload = read_json(path)
+    resources = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(resources, list):
+        raise ApplyError(f"{path} doit contenir une collection JSON:API dans data.")
+    titles: dict[int, str] = {}
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        attributes = resource_attributes(resource)
+        raw_id = resource.get("id", attributes.get("id"))
+        if raw_id is None:
+            continue
+        article_id = parse_id(raw_id, str(path))
+        title = attributes.get("title")
+        if isinstance(title, str) and title.strip():
+            titles[article_id] = title.strip()
+    return titles
+
+
+def display_proposal(
+    article_id: int,
+    entry: dict[str, Any],
+    tag_names: dict[int, str],
+    article_titles: dict[int, str],
+) -> None:
+    baseline, final_ids = ids_from_proposal(entry)
+    additions = sorted(set(final_ids) - set(baseline))
+    removals = sorted(set(baseline) - set(final_ids))
+    title = article_titles.get(article_id, f"Article {article_id}")
+    print(f"\nArticle {article_id} — {title}")
+    print(f"  statut : {entry['status']}")
+    print(f"  existing_tags : {', '.join(names_for(baseline, tag_names)) or 'aucun'}")
+    print(f"  final_tags    : {', '.join(names_for(final_ids, tag_names)) or 'aucun'}")
+    diff = [f"+{name}" for name in names_for(additions, tag_names)]
+    diff.extend(f"-{name}" for name in names_for(removals, tag_names))
+    print(f"  diff          : {'  '.join(diff) if diff else 'aucun changement'}")
+    notes = entry.get("notes")
+    if notes:
+        print(f"  notes         : {notes}")
+
+
+def save_proposals(path: Path, payload: dict[str, Any]) -> None:
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def prompt_status(entry: dict[str, Any]) -> str | None:
+    current = entry["status"]
+    pending_mark = "✓" if current == "pending" else " "
+    ready_mark = "✓" if current == "ready" else " "
+    print(f"  [{pending_mark}] pending    [{ready_mark}] ready")
+    try:
+        choice = input("  Nouveau statut [p/r, Entrée = conserver] : ").strip().lower()
+    except EOFError:
+        print("\nEntrée interactive terminée ; statut conservé.")
+        return None
+    if not choice:
+        return current
+    if choice in {"p", "pending"}:
+        return "pending"
+    if choice in {"r", "ready"}:
+        return "ready"
+    if choice in {"q", "quit", "annuler"}:
+        return None
+    print("  Choix invalide ; statut conservé.")
+    return current
+
+
+def review_one(data_dir: Path, article_id: int) -> None:
+    path = data_dir / "proposals.json"
+    payload = read_json(path)
+    if not isinstance(payload, dict):
+        raise ApplyError("data/proposals.json doit être un objet indexé par ID d'article.")
+    entry = payload.get(str(article_id))
+    if not isinstance(entry, dict):
+        raise ApplyError(f"Aucune proposition locale pour l'article {article_id}.")
+    if entry.get("status") == "applied":
+        raise ApplyError(
+            f"La proposition de l'article {article_id} est déjà applied ; démarre un nouveau cycle "
+            "ou remets explicitement son statut à pending avant de la réviser."
+        )
+    if entry.get("status") not in {"pending", "ready"}:
+        raise ApplyError(f"Statut invalide pour l'article {article_id} : {entry.get('status')!r}.")
+
+    tag_names = load_tag_names(data_dir / "tags.json")
+    article_titles = load_article_titles(data_dir / "articles.json")
+    display_proposal(article_id, entry, tag_names, article_titles)
+    new_status = prompt_status(entry)
+    if new_status is None or new_status == entry["status"]:
+        print("  Aucun changement de statut.")
+        return
+    entry["status"] = new_status
+    save_proposals(path, payload)
+    print(f"  Statut enregistré : {new_status}.")
+
+
+def review_all(data_dir: Path) -> None:
+    path = data_dir / "proposals.json"
+    payload = read_json(path)
+    if not isinstance(payload, dict):
+        raise ApplyError("data/proposals.json doit être un objet indexé par ID d'article.")
+    tag_names = load_tag_names(data_dir / "tags.json")
+    article_titles = load_article_titles(data_dir / "articles.json")
+
+    reviewable: list[tuple[int, dict[str, Any]]] = []
+    applied_count = 0
+    for raw_id, entry in payload.items():
+        article_id = parse_id(raw_id, "clé de proposals.json")
+        if not isinstance(entry, dict):
+            raise ApplyError(f"La proposition de l'article {article_id} doit être un objet JSON.")
+        status = entry.get("status")
+        if status == "applied":
+            applied_count += 1
+        elif status in {"pending", "ready"}:
+            reviewable.append((article_id, entry))
+        else:
+            raise ApplyError(
+                f"Statut invalide pour l'article {article_id} : {status!r} "
+                "(attendus : pending, ready, applied)."
+            )
+
+    reviewable.sort(key=lambda item: item[0])
+    for article_id, entry in reviewable:
+        display_proposal(article_id, entry, tag_names, article_titles)
+    if applied_count:
+        print(f"\n{applied_count} proposition(s) applied sont protégées et ignorées.")
+    if not reviewable:
+        print("Aucune proposition pending ou ready à réviser.")
+        return
+
+    pending_count = sum(entry["status"] == "pending" for _, entry in reviewable)
+    ready_count = sum(entry["status"] == "ready" for _, entry in reviewable)
+    print("\nAction de lot :")
+    print(f"  [r] Passer les {pending_count} pending à ready")
+    print(f"  [p] Passer les {ready_count} ready à pending")
+    print("  [i] Décider article par article")
+    print("  [Entrée/q] Ne rien changer")
+    try:
+        choice = input("Choix : ").strip().lower()
+    except EOFError:
+        print("\nEntrée interactive terminée ; aucun changement.")
+        return
+
+    if choice in {"r", "ready"}:
+        changed = 0
+        for _, entry in reviewable:
+            if entry["status"] == "pending":
+                entry["status"] = "ready"
+                changed += 1
+        if changed:
+            save_proposals(path, payload)
+        print(f"{changed} proposition(s) passée(s) à ready.")
+    elif choice in {"p", "pending"}:
+        changed = 0
+        for _, entry in reviewable:
+            if entry["status"] == "ready":
+                entry["status"] = "pending"
+                changed += 1
+        if changed:
+            save_proposals(path, payload)
+        print(f"{changed} proposition(s) passée(s) à pending.")
+    elif choice in {"i", "individuel", "individuellement"}:
+        changed = 0
+        for article_id, entry in reviewable:
+            print(f"\nArticle {article_id}")
+            new_status = prompt_status(entry)
+            if new_status is None:
+                print("  Révision individuelle interrompue.")
+                break
+            if new_status != entry["status"]:
+                entry["status"] = new_status
+                save_proposals(path, payload)
+                changed += 1
+        print(f"{changed} statut(s) modifié(s).")
+    elif choice not in {"", "q", "quit", "annuler"}:
+        print("Choix invalide ; aucun changement.")
+    else:
+        print("Aucun changement.")
+
+
 def unique_log_path(logs_dir: Path, article_id: int) -> Path:
     stamp = datetime.now().astimezone().strftime("%Y-%m-%d-%H%M%S")
     base = logs_dir / f"apply-{stamp}-article-{article_id}.json"
@@ -604,15 +792,20 @@ def process_article(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Inspect or apply ready article tag proposals to Joomla.",
+        description="Review local tag proposals or apply ready proposals to Joomla.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "--review ne contacte pas Joomla : il affiche existing_tags, final_tags, les notes "
+            "et permet de choisir pending ou ready. Avec --review --all, tu peux traiter le lot "
+            "en une fois ou article par article. Les entrées applied ne sont pas modifiables ici.\n"
             "Avec --apply, Content - Comments (JComments, plugin 10005) est désactivé "
             "temporairement par l'API pour toute la commande, puis réactivé s'il était "
             "actif au départ. --keep-jcomments-enabled désactive ce contournement. "
             "Une cible confirmée par relecture passe au statut applied ; --all traite uniquement "
             "les propositions ready. Les tags à écrire sont listés complètement dans final_tags.\n\n"
             "Exemples :\n"
+            "  python3 apply.py 710 --review\n"
+            "  python3 apply.py --review --all\n"
             "  python3 apply.py 683 --dry-run\n"
             "  python3 apply.py 683 --apply\n"
             "  python3 apply.py --all --dry-run\n"
@@ -624,6 +817,11 @@ def main() -> int:
         "--all",
         action="store_true",
         help="Process proposals with status=ready; skip pending and applied proposals.",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Interactively review local proposal status; combine with --all for a batch.",
     )
     parser.add_argument(
         "--keep-jcomments-enabled",
@@ -649,6 +847,30 @@ def main() -> int:
         parser.error("indique un ID d'article ou --all, mais pas les deux.")
     if args.article_id is not None and args.article_id <= 0:
         parser.error("article_id must be a positive integer.")
+    if args.review and (args.apply or args.dry_run):
+        parser.error("--review ne se combine pas avec --apply ou --dry-run.")
+    if args.review and args.keep_jcomments_enabled:
+        parser.error("--keep-jcomments-enabled ne s'applique pas à --review.")
+
+    if args.review:
+        if not sys.stdin.isatty():
+            parser.error("--review exige un terminal interactif.")
+        print(
+            "Fichiers locaux lus : "
+            f"{args.data_dir / 'proposals.json'}, "
+            f"{args.data_dir / 'tags.json'}, "
+            f"{args.data_dir / 'articles.json'}."
+        )
+        print("Aucune requête Joomla ne sera envoyée.")
+        try:
+            if args.all:
+                review_all(args.data_dir)
+            else:
+                review_one(args.data_dir, args.article_id)
+        except (ApplyError, OSError) as error:
+            print(f"Erreur : {error}", file=sys.stderr)
+            return 1
+        return 0
 
     try:
         tag_names = load_tag_names(args.data_dir / "tags.json")

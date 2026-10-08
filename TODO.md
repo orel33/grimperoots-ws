@@ -161,6 +161,8 @@ Exemple simplifié :
 
 L’assistant présente le résumé des changements avant application et enregistre les propositions en `pending`. L'utilisateur valide ou donne explicitement une cible, puis l'entrée passe à `ready`. `apply.py` ne traite que ce statut. Après relecture Joomla confirmant `final_tags`, il passe l'entrée à `applied`. Les journaux conservent le détail de l'exécution. Pour une nouvelle modification, actualiser `existing_tags`, renseigner une nouvelle cible complète et remettre le statut à `pending` ou `ready`.
 
+`apply.py <ID> --review` affiche une proposition locale et permet de choisir `pending` ou `ready`. `apply.py --review --all` permet de basculer les propositions révisables en lot ou de choisir leur statut une par une ; les entrées `applied` sont ignorées. Cette revue ne contacte pas Joomla.
+
 La création d’un tag reste manuelle dans Joomla. Après sa création, rafraîchir `data/tags.json`, documenter l’ID dans `TAGS.md`, puis l’ajouter aux propositions concernées.
 
 ---

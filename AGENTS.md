@@ -20,7 +20,7 @@ L'objectif est de construire un processus fiable qui :
 
 ## État actuel
 
-Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). L'assistant analyse les articles directement dans les exports locaux et prépare les propositions dans `data/proposals.json` ; aucune API OpenAI n'est utilisée par le dépôt. `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `apply.py <id>` traite une proposition `ready` ; `apply.py --all` traite toutes les propositions `ready` une par une. Après confirmation Joomla, leur statut devient `applied`. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions sont dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
+Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). L'assistant analyse les articles directement dans les exports locaux et prépare les propositions dans `data/proposals.json` ; aucune API OpenAI n'est utilisée par le dépôt. `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `apply.py <id> --review` révise localement le statut d'une proposition ; `apply.py --review --all` permet une revue individuelle ou un basculement en lot entre `pending` et `ready`. Les entrées `applied` sont ignorées. `apply.py <id>` traite une proposition `ready` ; `apply.py --all` traite toutes les propositions `ready` une par une. Après confirmation Joomla, leur statut devient `applied`. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions sont dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
 
 ---
 
@@ -225,6 +225,8 @@ Garder les propositions courtes ; les raisons et arbitrages sont présentés dan
 ## Validation
 
 Aucune proposition ne doit être appliquée automatiquement après analyse. Les suggestions restent en `pending` et `apply.py` les ignore. L'assistant affiche le diff du lot ; lorsque l'utilisateur accepte la suggestion ou donne explicitement la cible, renseigner la liste complète `final_tags` et passer `status` à `ready`. Lancer d'abord un dry-run ; toute écriture exige ensuite `--apply`. Après relecture Joomla confirmant la cible, `apply.py` passe `status` à `applied`. `apply.py --all` ne traite que les entrées `ready`. Une revue de qualité approfondie peut être faite après l'application du lot.
+
+Pour modifier les statuts localement, utiliser `python3 apply.py <ID> --review` ou `python3 apply.py --review --all`. Le mode de lot peut basculer toutes les propositions révisables entre `pending` et `ready`, ou les traiter une par une. Il exige un terminal interactif, ne contacte pas Joomla et ne modifie pas les entrées `applied`.
 
 Le pipeline doit produire un fichier du type :
 
