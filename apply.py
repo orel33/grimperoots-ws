@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Apply human-validated article tag proposals to Joomla via Web Services API."""
+"""Apply ready article tag proposals to Joomla via Web Services API."""
 
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import json
 import os
@@ -20,6 +21,7 @@ from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_ope
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_LOGS_DIR = PROJECT_DIR / "logs"
+JCOMMENTS_CONTENT_PLUGIN_ID = 10005
 ENV_KEYS = ("JOOMLA_BASE_URL", "JOOMLA_TOKEN")
 KNOWN_APPLY_WARNING = (
     "AVERTISSEMENT — Voir BUGS.md : sur l'instance actuelle, le plugin Content - JComments "
@@ -96,6 +98,16 @@ def article_endpoint(base_url: str, article_id: int) -> str:
     return f"{base_url}/api/index.php/v1/content/articles/{article_id}"
 
 
+def plugin_endpoint(base_url: str, plugin_id: int) -> str:
+    base_url = base_url.rstrip("/")
+    path = urlsplit(base_url).path.rstrip("/")
+    if path.endswith("/api/index.php/v1"):
+        return f"{base_url}/plugins/{plugin_id}"
+    if path.endswith("/api/index.php"):
+        return f"{base_url}/v1/plugins/{plugin_id}"
+    return f"{base_url}/api/index.php/v1/plugins/{plugin_id}"
+
+
 def api_request(
     url: str,
     token: str,
@@ -150,6 +162,95 @@ def api_request(
     if not isinstance(parsed, dict):
         raise ApplyError("Joomla a renvoyé une structure JSON inattendue.")
     return parsed
+
+
+def plugin_enabled(
+    base_url: str,
+    plugin_id: int,
+    token: str,
+    ssl_context: ssl.SSLContext,
+) -> bool:
+    response = api_request(
+        plugin_endpoint(base_url, plugin_id), token, ssl_context, "GET"
+    )
+    if response is None:
+        raise ApplyError("Joomla a renvoyé une réponse vide pour le plugin JComments.")
+    resource = resource_from_response(response, "le plugin JComments")
+    returned_id = parse_id(
+        resource.get("id", resource_attributes(resource).get("id")),
+        "plugin Joomla",
+    )
+    if returned_id != plugin_id:
+        raise ApplyError(f"L'API a renvoyé le plugin {returned_id} au lieu de {plugin_id}.")
+    value = resource_attributes(resource).get("enabled")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str) and value.strip() in ("0", "1"):
+        return value.strip() == "1"
+    raise ApplyError("La réponse Joomla ne contient pas l'état enabled du plugin JComments.")
+
+
+def set_plugin_enabled(
+    base_url: str,
+    plugin_id: int,
+    enabled: bool,
+    token: str,
+    ssl_context: ssl.SSLContext,
+) -> None:
+    if plugin_enabled(base_url, plugin_id, token, ssl_context) == enabled:
+        return
+    api_request(
+        plugin_endpoint(base_url, plugin_id),
+        token,
+        ssl_context,
+        "PATCH",
+        {"enabled": int(enabled)},
+    )
+    if plugin_enabled(base_url, plugin_id, token, ssl_context) != enabled:
+        desired = "activé" if enabled else "désactivé"
+        raise ApplyError(f"Joomla n'a pas confirmé que le plugin JComments est {desired}.")
+
+
+@contextmanager
+def jcomments_workaround(
+    base_url: str, token: str, ssl_context: ssl.SSLContext
+):
+    """Disable the failing content plugin for this run and restore its prior state."""
+    originally_enabled: bool | None = None
+    try:
+        originally_enabled = plugin_enabled(
+            base_url, JCOMMENTS_CONTENT_PLUGIN_ID, token, ssl_context
+        )
+        if originally_enabled:
+            print("JComments (plugin 10005) : désactivation temporaire.")
+            try:
+                set_plugin_enabled(
+                    base_url, JCOMMENTS_CONTENT_PLUGIN_ID, False, token, ssl_context
+                )
+            except ApplyError as error:
+                # A failed response can still follow a successful server-side change.
+                try:
+                    set_plugin_enabled(
+                        base_url, JCOMMENTS_CONTENT_PLUGIN_ID, True, token, ssl_context
+                    )
+                except ApplyError as restore_error:
+                    raise ApplyError(
+                        f"Impossible de désactiver JComments ({error}) et de confirmer son "
+                        f"état initial ({restore_error}). Vérifie le plugin dans Joomla."
+                    ) from error
+                raise
+        else:
+            print("JComments (plugin 10005) : déjà désactivé, état conservé.")
+
+        yield
+    finally:
+        if originally_enabled:
+            set_plugin_enabled(
+                base_url, JCOMMENTS_CONTENT_PLUGIN_ID, True, token, ssl_context
+            )
+            print("JComments (plugin 10005) : réactivé, comme avant l'exécution.")
 
 
 def read_json(path: Path) -> Any:
@@ -243,51 +344,83 @@ def load_tag_names(path: Path) -> dict[int, str]:
     return result
 
 
-def load_proposal(data_dir: Path, article_id: int) -> tuple[dict[str, Any], dict[str, Any]]:
+def load_proposal(data_dir: Path, article_id: int) -> dict[str, Any]:
     payload = read_json(data_dir / "proposals.json")
     if not isinstance(payload, dict):
         raise ApplyError("data/proposals.json doit être un objet indexé par ID d'article.")
     entry = payload.get(str(article_id))
     if not isinstance(entry, dict):
         raise ApplyError(f"Aucune proposition locale pour l'article {article_id}.")
-    review = entry.get("review")
-    if not isinstance(review, dict) or review.get("status") != "validated":
+    if entry.get("status") != "ready":
         raise ApplyError(
-            f"La proposition de l'article {article_id} n'a pas le statut review.status=validated."
+            f"La proposition de l'article {article_id} doit avoir le statut status=ready "
+            f"(statut actuel : {entry.get('status')!r})."
         )
-    return entry, review
+    return entry
 
 
-def load_proposal_ids(data_dir: Path) -> tuple[list[int], list[tuple[int, str]]]:
+def mark_proposal_applied(
+    data_dir: Path,
+    article_id: int,
+    final_ids: list[int],
+) -> None:
+    path = data_dir / "proposals.json"
+    payload = read_json(path)
+    if not isinstance(payload, dict):
+        raise ApplyError("data/proposals.json doit être un objet indexé par ID d'article.")
+    entry = payload.get(str(article_id))
+    if not isinstance(entry, dict):
+        raise ApplyError(f"Aucune proposition locale pour l'article {article_id}.")
+    if entry.get("status") != "ready":
+        raise ApplyError(f"La proposition de l'article {article_id} n'est plus au statut ready.")
+    current_final = ids_from_values(entry.get("final_tags"), "final_tags")
+    if set(current_final) != set(final_ids):
+        raise ApplyError(
+            f"La proposition de l'article {article_id} a changé pendant son application ; "
+            "son état local n'a pas été marqué comme appliqué."
+        )
+    entry["status"] = "applied"
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
+def load_proposal_ids(
+    data_dir: Path,
+) -> tuple[list[int], list[int], list[int]]:
     payload = read_json(data_dir / "proposals.json")
     if not isinstance(payload, dict):
         raise ApplyError("data/proposals.json doit être un objet indexé par ID d'article.")
-    validated: list[int] = []
-    skipped: list[tuple[int, str]] = []
+    ready: list[int] = []
+    pending: list[int] = []
+    applied: list[int] = []
     for raw_id, entry in payload.items():
         article_id = parse_id(raw_id, "clé de proposals.json")
-        review = entry.get("review") if isinstance(entry, dict) else None
-        if isinstance(review, dict) and review.get("status") == "validated":
-            validated.append(article_id)
+        if not isinstance(entry, dict):
+            raise ApplyError(f"La proposition de l'article {article_id} doit être un objet JSON.")
+        status = entry.get("status")
+        if status == "ready":
+            ready.append(article_id)
+        elif status == "pending":
+            pending.append(article_id)
+        elif status == "applied":
+            applied.append(article_id)
         else:
-            title = entry.get("title", "") if isinstance(entry, dict) else ""
-            skipped.append((article_id, str(title)))
-    return sorted(validated), sorted(skipped)
+            raise ApplyError(
+                f"Statut invalide pour l'article {article_id} : {status!r} "
+                "(attendus : pending, ready, applied)."
+            )
+    return sorted(ready), sorted(pending), sorted(applied)
 
 
 def ids_from_proposal(
-    entry: dict[str, Any], review: dict[str, Any]
-) -> tuple[list[int], list[int], list[int]]:
+    entry: dict[str, Any],
+) -> tuple[list[int], list[int]]:
     baseline = ids_from_values(entry.get("existing_tags"), "existing_tags")
-    final_ids = ids_from_values(review.get("final_tags"), "review.final_tags")
-    approved_removals: list[int] = []
-    for field in ("removed_tags", "validated_removed_tags"):
-        if field in review:
-            approved_removals.extend(ids_from_values(review[field], f"review.{field}"))
-    approved_removals = list(dict.fromkeys(approved_removals))
-    if set(approved_removals) - set(baseline):
-        raise ApplyError("review.removed_tags contient un tag absent des tags existants exportés.")
-    return baseline, final_ids, approved_removals
+    final_ids = ids_from_values(entry.get("final_tags"), "final_tags")
+    return baseline, final_ids
 
 
 def names_for(ids: list[int], tag_names: dict[int, str]) -> list[str]:
@@ -324,8 +457,8 @@ def process_article(
     label: str = "",
 ) -> bool:
     try:
-        proposal, review = load_proposal(data_dir, article_id)
-        baseline, final_ids, approved_removals = ids_from_proposal(proposal, review)
+        proposal = load_proposal(data_dir, article_id)
+        baseline, final_ids = ids_from_proposal(proposal)
         unknown = sorted(set(final_ids) - set(tag_names))
         if unknown:
             raise ApplyError("Tag(s) absent de l'export Joomla local : " + ", ".join(map(str, unknown)))
@@ -339,10 +472,14 @@ def process_article(
         if returned_id != article_id:
             raise ApplyError(f"L'API a renvoyé l'article {returned_id} au lieu de {article_id}.")
         current_ids = article_tag_ids(article)
-        title = resource_attributes(article).get("title") or proposal.get("title") or f"Article {article_id}"
+        title = resource_attributes(article).get("title") or f"Article {article_id}"
 
         print(f"{label}Article {article_id} — {title}")
         if set(current_ids) == set(final_ids):
+            if apply_changes:
+                mark_proposal_applied(data_dir, article_id, final_ids)
+                print("  Tags déjà conformes ; statut=applied enregistré.")
+                return True
             print("  Tags déjà conformes ; aucun changement.")
             return True
 
@@ -356,13 +493,7 @@ def process_article(
             )
 
         actual_removals = sorted(set(current_ids) - set(final_ids))
-        if set(actual_removals) - set(approved_removals):
-            raise ApplyError("Refus d'écriture : un tag existant serait retiré sans validation humaine explicite.")
-
         expected_additions = sorted(set(final_ids) - set(current_ids))
-        declared_additions = ids_from_values(proposal.get("new_tags", []), "new_tags")
-        if set(expected_additions) != set(declared_additions):
-            raise ApplyError("new_tags ne correspond pas aux ajouts calculés depuis les tags actuels.")
 
         diff = [f"+{names_for([tag_id], tag_names)[0]}" for tag_id in expected_additions]
         diff.extend(f"-{names_for([tag_id], tag_names)[0]}" for tag_id in actual_removals)
@@ -380,6 +511,7 @@ def process_article(
             "after": final_ids,
             "added": expected_additions,
             "removed": actual_removals,
+            "notes": proposal.get("notes", ""),
             "status": "prepared",
             "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
@@ -418,7 +550,8 @@ def process_article(
             if set(observed_ids) == set(final_ids):
                 log_entry["status"] = "patch_error_but_target_confirmed"
                 write_log(log_path, log_entry)
-                print(f"  PATCH en erreur, mais tags validés confirmés après relecture. Journal : {log_path}")
+                mark_proposal_applied(data_dir, article_id, final_ids)
+                print(f"  PATCH en erreur, mais cible confirmée après relecture. Journal : {log_path}")
                 return True
             if set(observed_ids) == set(current_ids):
                 log_entry["status"] = "patch_error_no_change_confirmed"
@@ -456,11 +589,12 @@ def process_article(
             log_entry["status"] = "verification_mismatch"
             write_log(log_path, log_entry)
             raise ApplyError(
-                "Le PATCH a répondu, mais la relecture Joomla ne correspond pas aux tags validés. "
+                "Le PATCH a répondu, mais la relecture Joomla ne correspond pas à final_tags. "
                 f"Journal : {log_path}"
             )
         log_entry["status"] = "verified"
         write_log(log_path, log_entry)
+        mark_proposal_applied(data_dir, article_id, final_ids)
         print(f"  Mise à jour confirmée par relecture Joomla. Journal : {log_path}")
         return True
     except (ApplyError, OSError) as error:
@@ -470,15 +604,45 @@ def process_article(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Inspect or apply human-validated article tag proposals to Joomla."
+        description="Inspect or apply ready article tag proposals to Joomla.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Avec --apply, Content - Comments (JComments, plugin 10005) est désactivé "
+            "temporairement par l'API pour toute la commande, puis réactivé s'il était "
+            "actif au départ. --keep-jcomments-enabled désactive ce contournement. "
+            "Une cible confirmée par relecture passe au statut applied ; --all traite uniquement "
+            "les propositions ready. Les tags à écrire sont listés complètement dans final_tags.\n\n"
+            "Exemples :\n"
+            "  python3 apply.py 683 --dry-run\n"
+            "  python3 apply.py 683 --apply\n"
+            "  python3 apply.py --all --dry-run\n"
+            "  python3 apply.py --all --apply"
+        ),
     )
     parser.add_argument("article_id", type=int, nargs="?", help="Joomla article ID to inspect or update.")
-    parser.add_argument("--all", action="store_true", help="Process every human-validated proposal.")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Process proposals with status=ready; skip pending and applied proposals.",
+    )
+    parser.add_argument(
+        "--keep-jcomments-enabled",
+        action="store_true",
+        help="Keep JComments enabled during --apply (may reproduce the HTTP 500 and leave article locks).",
+    )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--dry-run", action="store_true", help="Read Joomla and print the proposed change (default).")
-    mode.add_argument("--apply", action="store_true", help="Write the validated tags to Joomla through PATCH.")
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
-    parser.add_argument("--logs-dir", type=Path, default=DEFAULT_LOGS_DIR)
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Read Joomla and print changes without PATCH or local status writes (default).",
+    )
+    mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="PATCH final_tags for ready proposals and set status=applied after Joomla confirms them.",
+    )
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Directory containing tags.json and proposals.json.")
+    parser.add_argument("--logs-dir", type=Path, default=DEFAULT_LOGS_DIR, help="Directory for per-article apply logs.")
     args = parser.parse_args()
 
     if (args.article_id is None) == (not args.all):
@@ -498,49 +662,65 @@ def main() -> int:
             raise ApplyError("JOOMLA_BASE_URL doit être une URL https valide.")
 
         if args.apply:
-            print(KNOWN_APPLY_WARNING)
+            if args.keep_jcomments_enabled:
+                print(KNOWN_APPLY_WARNING)
+            else:
+                print(
+                    "Contournement JComments actif : le plugin Content - Comments sera "
+                    "désactivé pendant l'application puis rétabli."
+                )
 
         ssl_context = create_ssl_context()
         if args.all:
-            article_ids, skipped = load_proposal_ids(args.data_dir)
-            if skipped:
-                print(f"{len(skipped)} proposition(s) ignorée(s), revue non validée :")
-                for article_id, title in skipped:
-                    print(f"  Article {article_id}" + (f" — {title}" if title else ""))
+            article_ids, pending, applied = load_proposal_ids(args.data_dir)
+            if pending:
+                print(f"{len(pending)} proposition(s) pending ignorée(s) :")
+                for article_id in pending:
+                    print(f"  Article {article_id}")
+            if applied:
+                print(f"{len(applied)} proposition(s) applied ignorée(s).")
             if not article_ids:
-                if skipped:
-                    print("Aucune proposition validée à traiter.")
-                    return 0
-                raise ApplyError("Aucune proposition dans data/proposals.json.")
-            print(f"{len(article_ids)} proposition(s) validée(s) à traiter")
-            failures = 0
-            for index, article_id in enumerate(article_ids, start=1):
-                label = f"[{index}/{len(article_ids)}] "
-                if not process_article(
-                    article_id,
-                    args.data_dir,
-                    args.logs_dir,
-                    tag_names,
-                    base_url,
-                    token,
-                    ssl_context,
-                    args.apply,
-                    label,
-                ):
-                    failures += 1
-            print(f"Terminé : {len(article_ids) - failures} réussi(s), {failures} erreur(s).")
-            return 1 if failures else 0
+                print("Aucune proposition ready à traiter.")
+                return 0
+            print(f"{len(article_ids)} proposition(s) ready à traiter")
+        else:
+            load_proposal(args.data_dir, args.article_id)
 
-        return 0 if process_article(
-            args.article_id,
-            args.data_dir,
-            args.logs_dir,
-            tag_names,
-            base_url,
-            token,
-            ssl_context,
-            args.apply,
-        ) else 1
+        workaround = (
+            jcomments_workaround(base_url, token, ssl_context)
+            if args.apply and not args.keep_jcomments_enabled
+            else nullcontext()
+        )
+        with workaround:
+            if args.all:
+                failures = 0
+                for index, article_id in enumerate(article_ids, start=1):
+                    label = f"[{index}/{len(article_ids)}] "
+                    if not process_article(
+                        article_id,
+                        args.data_dir,
+                        args.logs_dir,
+                        tag_names,
+                        base_url,
+                        token,
+                        ssl_context,
+                        args.apply,
+                        label,
+                    ):
+                        failures += 1
+                print(f"Terminé : {len(article_ids) - failures} réussi(s), {failures} erreur(s).")
+                return 1 if failures else 0
+
+            return 0 if process_article(
+                args.article_id,
+                args.data_dir,
+                args.logs_dir,
+                tag_names,
+                base_url,
+                token,
+                ssl_context,
+                args.apply,
+            ) else 1
     except (ApplyError, OSError) as error:
         print(f"Erreur : {error}", file=sys.stderr)
         return 1

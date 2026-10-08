@@ -134,35 +134,32 @@ L’analyse est sémantique : identifier l’activité et le lieu réels, utilis
 
 ## Phase 6 — Propositions JSON
 
-Après analyse, l’assistant ajoute ou met à jour les entrées correspondantes dans `data/proposals.json` avec `review.status=pending`. Ce fichier reste local et ignoré par Git. Il conserve pour chaque article les tags de départ, les tags proposés, les incertitudes et, après autorisation du lot, les tags finaux et les suppressions explicitement acceptées.
+Après analyse, l’assistant ajoute ou met à jour les entrées correspondantes dans `data/proposals.json` avec `status=pending`. Ce fichier reste local et ignoré par Git. Chaque entrée garde l'état initial complet `existing_tags`, la cible complète `final_tags`, un statut et, si nécessaire, une note de décision. Le statut devient `ready` lorsque l'utilisateur valide ou donne explicitement sa cible, puis `applied` après confirmation Joomla.
 
 Exemple simplifié :
 
 ```json
 {
   "802": {
-    "title": "Compte rendu de sortie",
     "existing_tags": [20, 21],
-    "suggested_tags": [33],
-    "new_tags": [33],
-    "uncertain_tags": [],
-    "review": {
-      "status": "pending"
-    }
+    "final_tags": [20, 21, 33],
+    "status": "pending",
+    "notes": "Ajouter le tag du massif où se déroule la sortie."
   }
 }
 ```
 
-- [x] distinguer tags existants, ajouts, incertitudes et retraits validés ;
+- [x] calculer ajouts et retraits par différence entre `existing_tags` et `final_tags` ;
 - [x] ne jamais inventer un tag Joomla ;
 - [x] conserver les tags existants par défaut ;
 - [x] documenter les décisions après autorisation dans la proposition.
+- [x] archiver un cycle terminé et initialiser un nouveau `proposals.json` vide avec `init_proposals.py`.
 
 ---
 
 ## Phase 7 — Revue et application par lot
 
-L’assistant présente le résumé des changements avant application et enregistre les propositions en attente. L’utilisateur autorise explicitement le lot ; l’assistant marque les articles retenus `review.status=validated`, puis seuls ceux-ci sont traités par `apply.py`. Après application, une revue de qualité peut conduire à corriger les propositions et à envoyer un nouveau lot.
+L’assistant présente le résumé des changements avant application et enregistre les propositions en `pending`. L'utilisateur valide ou donne explicitement une cible, puis l'entrée passe à `ready`. `apply.py` ne traite que ce statut. Après relecture Joomla confirmant `final_tags`, il passe l'entrée à `applied`. Les journaux conservent le détail de l'exécution. Pour une nouvelle modification, actualiser `existing_tags`, renseigner une nouvelle cible complète et remettre le statut à `pending` ou `ready`.
 
 La création d’un tag reste manuelle dans Joomla. Après sa création, rafraîchir `data/tags.json`, documenter l’ID dans `TAGS.md`, puis l’ajouter aux propositions concernées.
 
@@ -170,7 +167,7 @@ La création d’un tag reste manuelle dans Joomla. Après sa création, rafraî
 
 ## Phase 8 — Inspection et dry-run
 
-`apply.py <ID>` inspecte un article et `apply.py --all` parcourt toutes les propositions validées, une par une. Les deux modes interrogent l'API Joomla en lecture seule par défaut, contrôlent la proposition et comparent ses tags à l'état courant. En mode global, les propositions non validées sont listées et ignorées ; une erreur sur un article est signalée sans interrompre les articles suivants.
+`apply.py <ID>` inspecte une proposition `ready` et `apply.py --all` les parcourt une par une. Les deux modes interrogent l'API Joomla en lecture seule par défaut, contrôlent la proposition et comparent ses tags à l'état courant. En mode global, les propositions `pending` et `applied` sont ignorées avec un compte rendu ; une erreur sur un article est signalée sans interrompre les articles suivants.
 
 ```bash
 python apply.py 764 --dry-run
@@ -186,11 +183,13 @@ Affichage souhaité :
 ```
 
 - [x] Pouvoir inspecter un article avec `python apply.py <ID> --dry-run`.
-- [x] Parcourir toutes les propositions validées avec `python apply.py --all --dry-run`.
+- [x] Parcourir toutes les propositions `ready` avec `python apply.py --all --dry-run`.
 - [x] Afficher les changements avec un diff compact `+Tag` / `-Tag`.
-- [x] Ignorer et lister les propositions qui n'ont pas été validées.
+- [x] Ignorer et lister les propositions `pending` et `applied`.
 - [x] Ne faire aucune écriture en mode simulation (mode par défaut).
-- [x] Refuser les propositions sans revue humaine validée et les suppressions non approuvées.
+- [x] Refuser les propositions sans statut `ready`.
+- [x] Passer `status` à `applied` après confirmation par relecture Joomla et ignorer ces propositions lors des prochains `--all`.
+- [x] Désactiver temporairement Content - Comments (JComments, ID 10005) par défaut pendant `--apply`, puis restaurer son état initial ; `--keep-jcomments-enabled` désactive le contournement.
 - [ ] Prévoir éventuellement une sortie CSV et l'inspection par tag.
 
 ---
@@ -214,7 +213,7 @@ Pour la revue de qualité après application :
 
 ## Phase 10 — Écriture Joomla
 
-Le 8 octobre 2026, `python apply.py --all --apply` a parcouru les 18 propositions validées. Neuf articles ont reçu de nouveaux tags ou des retraits validés ; les neuf autres étaient déjà conformes. Une relecture API a confirmé l’état cible pour chaque PATCH malgré la réponse HTTP 500. Le tag Joomla `Via Ferrata` (ID 42) a ensuite été exporté et ajouté au CR 600 par un PATCH ciblé, également confirmé par relecture. Les journaux d’application par article se trouvent dans `logs/`.
+Le 8 octobre 2026, `python apply.py --all --apply` a parcouru le lot de 18 propositions approuvées. Neuf articles ont reçu des ajouts ou retraits de tags ; les neuf autres étaient déjà conformes. Une relecture API a confirmé l’état cible pour chaque PATCH malgré la réponse HTTP 500. Le tag Joomla `Via Ferrata` (ID 42) a ensuite été exporté et ajouté au CR 600 par un PATCH ciblé, également confirmé par relecture. Les journaux d’application par article se trouvent dans `logs/`.
 
 La cause du HTTP 500 reste le plugin de contenu `JComments` pendant `onContentAfterSave` : il appelle `Route::_()` dans le contexte API, ce qui aboutit à `Call to undefined method Joomla\CMS\Router\ApiRouter::build()`. Le manifeste installé indique JComments 5.0.6 et le journal Joomla indique Joomla 6.1.4. L’article et ses tags sont enregistrés avant cette erreur post-save ; `apply.py` affiche un avertissement, relit l’article et distingue une cible confirmée d’un état inconnu ou inattendu. Pour les prochaines écritures, conserver le dry-run et vérifier les journaux et les relectures ; corriger JComments reste souhaitable, mais n’est pas un prérequis pour les tags tant que les relectures confirment les résultats.
 ```bash

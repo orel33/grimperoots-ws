@@ -20,7 +20,7 @@ L'objectif est de construire un processus fiable qui :
 
 ## État actuel
 
-Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). L'assistant analyse les articles directement dans les exports locaux et prépare les propositions dans `data/proposals.json` ; aucune API OpenAI n'est utilisée par le dépôt. `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `apply.py <id>` traite une proposition validée ; `apply.py --all` traite toutes les propositions validées une par une. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions sont dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
+Les scripts en place couvrent l'export des tags, catégories, comptes auteurs et articles (`fetch_tags.py`, `fetch_categories.py`, `fetch_authors.py`, `fetch_articles.py`). L'assistant analyse les articles directement dans les exports locaux et prépare les propositions dans `data/proposals.json` ; aucune API OpenAI n'est utilisée par le dépôt. `render_article.py <id>` génère le HTML d'un article depuis `data/articles.json`. `apply.py <id>` traite une proposition `ready` ; `apply.py --all` traite toutes les propositions `ready` une par une. Après confirmation Joomla, leur statut devient `applied`. Sans `--apply`, ces commandes restent en simulation. Les exports et propositions sont dans `data/`, ignoré par Git, et les journaux d'écriture dans `logs/`, également ignoré par Git.
 
 ---
 
@@ -200,7 +200,7 @@ Ne pas télécharger les images pour la première version du système.
 
 L'assistant travaille à partir des exports présents dans `data/`. Ne pas appeler l'API OpenAI, ne pas transmettre le contenu à un service de classification externe et ne demander ni clé OpenAI ni SDK.
 
-Pour chaque article demandé par l'utilisateur, lire le texte complet ainsi que le titre, la catégorie, la date et les tags actuels. Comparer les faits de l'article à la liste fermée des tags de `data/tags.json` et à leurs descriptions dans `TAGS.md`. Produire une proposition courte dans `data/proposals.json` avec `review.status=pending`, puis présenter les associations et retraits envisagés dans un tableau `+Tag` / `-Tag`. Les ajouts sont proposés par défaut ; les retraits restent exclus, sauf demande ou validation explicite de l'utilisateur.
+Pour chaque article demandé par l'utilisateur, lire le texte complet ainsi que le titre, la catégorie, la date et les tags actuels. Comparer les faits de l'article à la liste fermée des tags de `data/tags.json` et à leurs descriptions dans `TAGS.md`. Produire une proposition courte dans `data/proposals.json` avec `status=pending`, puis présenter les associations et retraits envisagés dans un tableau `+Tag` / `-Tag`. Les ajouts sont proposés par défaut ; les retraits restent exclus, sauf demande ou validation explicite de l'utilisateur.
 
 L'analyse doit suivre ces règles :
 
@@ -214,15 +214,17 @@ L'analyse doit suivre ces règles :
 - pouvoir signaler les cas ambigus ;
 - préserver les tags existants.
 
-Les propositions locales suivent le format JSON de `data/proposals.json`. Ajouter ou mettre à jour une entrée par ID d'article sans remplacer les entrées des autres articles. Une proposition en attente inclut `title`, `existing_tags`, `suggested_tags`, `new_tags`, `uncertain_tags` et un objet `review` de statut `pending`. Ne pas ajouter de métadonnées propres à un modèle ou à une API de classification.
+Les propositions locales suivent le format JSON de `data/proposals.json`. Ajouter ou mettre à jour une entrée par ID d'article sans remplacer les entrées des autres articles. Une entrée contient `existing_tags` (état complet de départ), `final_tags` (cible complète), `status` et, si utile, `notes`. `pending` signifie qu'une suggestion attend validation ; `ready` signifie que l'utilisateur a validé ou explicitement donné la cible ; `applied` signifie que Joomla a confirmé la cible par relecture. Les notes sont facultatives et peuvent expliquer une décision métier à intégrer ensuite dans `TAGS.md`. Ne pas ajouter de métadonnées propres à un modèle ou à une API de classification.
 
-Garder les propositions courtes ; les raisons et les arbitrages sont présentés dans la conversation ou dans `review.notes` après validation.
+Pour ouvrir une campagne distincte, actualiser d'abord les exports Joomla nécessaires, puis utiliser `init_proposals.py`. Ce script archive le cycle précédent sous `data/archive/` et initialise `data/proposals.json` à `{}`. Ne pas préremplir les propositions pour tous les articles : `data/articles.json` conserve déjà leur état courant complet, tandis que `proposals.json` suit uniquement les articles analysés pendant le cycle.
+
+Garder les propositions courtes ; les raisons et arbitrages sont présentés dans la conversation ou, si utile, dans `notes` au niveau de l'entrée.
 
 ---
 
 ## Validation
 
-Aucune proposition ne doit être appliquée automatiquement après analyse. Les propositions préparées par l'assistant restent en attente (`review.status=pending`) et ne sont pas traitées par `apply.py`. L'assistant affiche le diff du lot ; après autorisation explicite de l'utilisateur, il marque les propositions retenues `review.status=validated`, renseigne `review.final_tags` et les retraits explicitement acceptés, puis lance d'abord un dry-run. Toute écriture exige ensuite `--apply`. Une revue de qualité approfondie peut être faite après l'application du lot.
+Aucune proposition ne doit être appliquée automatiquement après analyse. Les suggestions restent en `pending` et `apply.py` les ignore. L'assistant affiche le diff du lot ; lorsque l'utilisateur accepte la suggestion ou donne explicitement la cible, renseigner la liste complète `final_tags` et passer `status` à `ready`. Lancer d'abord un dry-run ; toute écriture exige ensuite `--apply`. Après relecture Joomla confirmant la cible, `apply.py` passe `status` à `applied`. `apply.py --all` ne traite que les entrées `ready`. Une revue de qualité approfondie peut être faite après l'application du lot.
 
 Le pipeline doit produire un fichier du type :
 
@@ -235,14 +237,10 @@ Exemple :
 ```json
 {
   "123": {
-    "title": "Traversée de Bavella",
     "existing_tags": [18],
-    "suggested_tags": [12, 18],
-    "new_tags": [12],
-    "uncertain_tags": [],
-    "review": {
-      "status": "pending"
-    }
+    "final_tags": [12, 18],
+    "status": "pending",
+    "notes": "Ajouter le tag correspondant au massif réellement parcouru."
   }
 }
 ```
