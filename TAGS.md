@@ -91,10 +91,10 @@ Aucun indice isolé ne suffit à lui seul : apprécier leur combinaison et le de
 
 ### 28 — Escalade
 
-- **Définition proposée :** pratique de l’escalade réellement effectuée, en falaise ou sur un autre support pertinent.
-- **À utiliser quand :** l’article décrit une ou plusieurs voies ou séances d’escalade réellement effectuées. Pour une course rocheuse en version alpinisme, utiliser également `Alpinisme`, selon la section « Frontière entre Escalade et Alpinisme ».
-- **Ne pas utiliser quand :** l’escalade n’est qu’un projet, une mention incidente ou un passage anecdotique d’une autre activité.
-- **Statut :** règle de distinction avec `Alpinisme` précisée ; notamment le bloc et l'escalade artificielle restent à valider.
+- **Définition proposée :** pratique de l’escalade sur rocher réellement effectuée, en falaise ou en grande voie.
+- **À utiliser quand :** l’article décrit une ou plusieurs voies ou séances d’escalade sur rocher. Pour une course rocheuse en version alpinisme, utiliser également `Alpinisme`, selon la section « Frontière entre Escalade et Alpinisme ».
+- **Ne pas utiliser quand :** l'activité est de l'escalade sur glace ; utiliser alors `Cascade de Glace`. Ne pas l'utiliser non plus quand l’escalade sur rocher n’est qu’un projet, une mention incidente ou un passage anecdotique d’une autre activité.
+- **Statut :** périmètre limité à l'escalade sur rocher ; la distinction avec `Alpinisme` est précisée. Le bloc et l'escalade artificielle restent à valider.
 
 ### 29 — Espagne
 
