@@ -7,7 +7,7 @@ Outils pour exporter des données du site Joomla 6 Grimperoots, compléter les a
 | Répertoire | Rôle | Outils principaux |
 |---|---|---|
 | `joomla_api/` | Accès aux Web Services Joomla standards | Export des articles, tags, catégories et auteurs |
-| `joomla_custom/` | Endpoints PHP spécifiques et clients Python associés | Index public des CR et lecture protégée du texte brut |
+| `joomla_custom/` | Endpoints PHP spécifiques, clients et déploiement | Index des CR, lecture protégée et inventaire des photos |
 | `tag_indexing/` | Travail local d’indexage | Revue des propositions, application des tags et rendu HTML |
 
 Les données locales restent à la racine : `data/` contient les exports et propositions, `logs/` les journaux d’application et `output/` les rendus HTML. Ces répertoires de données sont ignorés par Git.
@@ -32,7 +32,9 @@ define('GRIMPEROOTS_WS_TOKEN', 'valeur-aleatoire');
 
 Générer une valeur avec `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` et utiliser la même des deux côtés. Le `.htaccess` bloque l’accès web à `config.local.php` et au fichier PHP commun.
 
-Les identifiants MySQL ne sont pas nécessaires dans `.env.local` : les endpoints PHP les lisent sur OVH dans `/www/j6/configuration.php`. Les variables locales `J6_DB_*`, `FTP_*` et `REMOTE_ROOT` ne sont utilisées par aucun des scripts actuels et peuvent être supprimées.
+Les identifiants MySQL ne sont pas nécessaires dans `.env.local` : les endpoints PHP les lisent sur OVH dans `/www/j6/configuration.php`. Les variables `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, `FTP_PLAIN` et `REMOTE_ROOT` servent uniquement au déploiement décrit ci-dessous. `J6_DB_*` n’est pas utilisé localement.
+
+[`joomla_custom/ws_client.py`](joomla_custom/ws_client.py) est le client HTTP partagé par les outils de `joomla_custom/`. Il lit `SITE_URL` et `GRIMPEROOTS_WS_TOKEN` depuis `.env.local`, puis laisse les variables d’environnement du processus les remplacer si elles sont définies. `get_json()` envoie une requête HTTPS GET avec `Accept: application/json` et, pour les endpoints protégés, le secret dans le header `X-Grimperoots-Token`. Il vérifie le certificat TLS, refuse les redirections afin de ne pas transmettre le secret à une autre adresse, décode la réponse JSON et transforme les erreurs HTTP ou réseau en messages compréhensibles. Il ne déploie aucun fichier et ne fait aucune écriture sur Joomla.
 
 ---
 
@@ -54,6 +56,17 @@ Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json
 ## 2. `joomla_custom/` — Endpoints complémentaires
 
 Les endpoints versionnés sont dans `joomla_custom/www/ws/`. Sur l’hébergement actuel, leur destination est `/www/ws/`, à côté de l’installation Joomla `/www/j6/`. Ils chargent sa configuration depuis `/www/j6/configuration.php`.
+
+### Déployer un endpoint PHP
+
+`joomla_custom.deploy_ws` envoie un fichier PHP versionné de `joomla_custom/www/ws/` vers `/www/ws/` avec les accès FTP de `.env.local`. `REMOTE_ROOT` désigne `/www/j6` ; le script cible son dossier frère `/www/ws`. Le mode par défaut est une simulation. Toute transmission exige `--apply` ; si le fichier existe déjà, ajouter aussi `--overwrite`.
+
+```bash
+python3 -m joomla_custom.deploy_ws article-photos.php --dry-run
+python3 -m joomla_custom.deploy_ws article-photos.php --apply
+```
+
+Le script vérifie le SHA-256 du fichier après transfert et ne déploie pas `config.local.php` ni les fichiers communs préfixés par `_`. FTPS est utilisé par défaut ; `FTP_PLAIN=true` force FTP sans chiffrement et ne doit être utilisé que si l’hébergement ne permet pas FTPS.
 
 ### Index des comptes rendus
 
@@ -109,7 +122,49 @@ python3 -m joomla_custom.fetch_article 802 --output data/article-802.json
 
 La sortie contient `id`, `title`, `alias`, `category_id`, `category`, `created`, `introtext`, `fulltext` et `existing_tags`. `--dry-run` simule la requête. L’ancien `--apply` reste accepté comme alias de compatibilité et ne provoque aucune écriture.
 
-Ces endpoints utilisent uniquement des requêtes SQL `SELECT`. Les outils Python les appellent en HTTPS et ne déposent plus de fichiers temporaires par FTP.
+### Inventaire des photos d’un CR
+
+[`article-photos.php`](joomla_custom/www/ws/article-photos.php) prend l’ID du CR avec `?id=<ID>` et renvoie du JSON. Il exige le même header `X-Grimperoots-Token` que `article.php` ; le secret ne doit être transmis ni dans une URL, ni dans un navigateur, ni dans la réponse. L’appel est destiné à un client serveur utilisant HTTPS.
+
+L’endpoint lit les directives `{gallery}...{/gallery}` dans le contenu brut de l’article, ainsi que les images référencées par ses balises `<img>`. Il parcourt les fichiers image des répertoires de galerie correspondants sous `images/albums/`. Les chemins `path` et les valeurs de `galleries` sont relatifs à cette racine. Les chemins sont vérifiés contre la racine réelle du répertoire afin de bloquer les sorties de dossier ; seules les images existantes avec une extension reconnue sont ajoutées à `photos`. Les galeries sont parcourues récursivement. Une photo présente dans le contenu et une galerie est dédupliquée et conservée avec `type: "article"`.
+
+Exemple de réponse :
+
+```json
+{
+  "article_id": 797,
+  "article_title": "Titre du CR",
+  "article_date": "2026-04-26",
+  "article_url": "https://www.grimperoots.fr/j6/797",
+  "galleries": ["2026/coollover"],
+  "photos": [
+    {"type": "article", "path": "2026/coollover/coollover_0011.jpg"},
+    {"type": "gallery", "path": "2026/coollover/coollover_0002.jpg"}
+  ]
+}
+```
+
+Le client construit les URL des photos en ajoutant le préfixe `https://www.grimperoots.fr/j6/images/albums/` aux chemins `path`.
+
+Pour récupérer l’inventaire d’un CR en JSON :
+
+```bash
+python3 -m joomla_custom.fetch_article_photos 797
+```
+
+Le JSON est écrit sur la sortie standard. `--output` permet de l’enregistrer dans un fichier, et `--env-file` de choisir un autre fichier de configuration. Le programme lit le secret dans `.env.local`, le transmet dans le header HTTPS et ne l’affiche pas.
+
+```bash
+python3 -m joomla_custom.fetch_article_photos 797 --output data/article-797-photos.json
+```
+
+```bash
+curl --fail-with-body \
+  -H "X-Grimperoots-Token: ${GRIMPEROOTS_WS_TOKEN}" \
+  "https://www.grimperoots.fr/ws/article-photos.php?id=797"
+```
+
+Ces endpoints exécutent uniquement des requêtes SQL `SELECT` et, pour l’inventaire des photos, lisent les fichiers sous `images/albums/`. Les outils Python les appellent en HTTPS et ne déposent plus de fichiers temporaires par FTP.
 
 ---
 
