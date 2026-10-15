@@ -13,11 +13,11 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
-from fetch_articles import load_settings
+from joomla_api.fetch_articles import load_settings
 
 
-PROJECT_DIR = Path(__file__).resolve().parent
-CSS_SOURCE = PROJECT_DIR / "assets" / "article.css"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+CSS_SOURCE = Path(__file__).resolve().parent / "assets" / "article.css"
 
 
 def site_root_url(base_url: str) -> str:

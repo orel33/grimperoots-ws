@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_LOGS_DIR = PROJECT_DIR / "logs"
 JCOMMENTS_CONTENT_PLUGIN_ID = 10005
@@ -804,12 +804,12 @@ def main() -> int:
             "Une cible confirmée par relecture passe au statut applied ; --all traite uniquement "
             "les propositions ready. Les tags à écrire sont listés complètement dans final_tags.\n\n"
             "Exemples :\n"
-            "  python3 apply.py 710 --review\n"
-            "  python3 apply.py --review --all\n"
-            "  python3 apply.py 683 --dry-run\n"
-            "  python3 apply.py 683 --apply\n"
-            "  python3 apply.py --all --dry-run\n"
-            "  python3 apply.py --all --apply"
+            "  python3 -m tag_indexing.apply 710 --review\n"
+            "  python3 -m tag_indexing.apply --review --all\n"
+            "  python3 -m tag_indexing.apply 683 --dry-run\n"
+            "  python3 -m tag_indexing.apply 683 --apply\n"
+            "  python3 -m tag_indexing.apply --all --dry-run\n"
+            "  python3 -m tag_indexing.apply --all --apply"
         ),
     )
     parser.add_argument("article_id", type=int, nargs="?", help="Joomla article ID to inspect or update.")

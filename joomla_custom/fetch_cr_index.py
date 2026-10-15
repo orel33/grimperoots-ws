@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fetch_article_from_db import (
+from joomla_custom.fetch_article_from_db import (
     DEFAULT_ENV_FILE,
     REQUIRED_ENV_KEYS,
     bridge_url,
