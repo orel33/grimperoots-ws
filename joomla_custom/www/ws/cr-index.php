@@ -32,7 +32,6 @@ try {
             'id' => (int) $id,
             'title' => $title,
             'created' => $created,
-            'url' => '../' . (int) $id,
         ];
     }
     $stmt->close();
@@ -41,8 +40,15 @@ try {
     ws_json_response(['error' => 'CR index lookup failed'], 500);
 }
 
+$format = strtolower(trim((string) ($_GET['format'] ?? '')));
+if (!in_array($format, ['', 'html', 'json'], true)) {
+    ws_json_response(['error' => 'Invalid format; use html or json'], 400);
+}
+
 $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-if (str_contains($accept, 'text/html')) {
+$wantsHtml = $format === 'html'
+    || ($format === '' && str_contains($accept, 'text/html'));
+if ($wantsHtml) {
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-store');
     echo '<!doctype html><html lang="fr"><meta charset="utf-8">'

@@ -14,7 +14,7 @@ Les données locales restent à la racine : `data/` contient les exports et prop
 
 ## Configuration
 
-Utiliser Python 3.10 ou supérieur. Le fichier `.env.local`, ignoré par Git, contient la configuration des API :
+Utiliser Python 3.10 ou supérieur. `.env.example` liste les variables nécessaires. Reporter et compléter ces valeurs dans `.env.local`, qui est ignoré par Git. Le fichier `.env` séparé n’est pas nécessaire lorsque `.env.local` contient ces valeurs :
 
 ```dotenv
 JOOMLA_BASE_URL=https://www.example.org/j6
@@ -31,6 +31,8 @@ define('GRIMPEROOTS_WS_TOKEN', 'valeur-aleatoire');
 ```
 
 Générer une valeur avec `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` et utiliser la même des deux côtés. Le `.htaccess` bloque l’accès web à `config.local.php` et au fichier PHP commun.
+
+Les identifiants MySQL ne sont pas nécessaires dans `.env.local` : les endpoints PHP les lisent sur OVH dans `/www/j6/configuration.php`. Les variables locales `J6_DB_*`, `FTP_*` et `REMOTE_ROOT` ne sont utilisées par aucun des scripts actuels et peuvent être supprimées.
 
 ---
 
@@ -59,6 +61,27 @@ Les endpoints versionnés sont dans `joomla_custom/www/ws/`. Sur l’hébergemen
 
 [https://www.grimperoots.fr/ws/cr-index.php](https://www.grimperoots.fr/ws/cr-index.php)
 
+Cet index est public et ne demande pas de jeton : il ne liste que des articles publiés et leurs métadonnées publiques. À l’inverse, `article.php` renvoie le texte brut complet et peut aussi retrouver un article non publié ; il exige donc `X-Grimperoots-Token`.
+
+Le format se choisit directement dans l’URL :
+
+- HTML : `https://www.grimperoots.fr/ws/cr-index.php?format=html`
+- JSON : `https://www.grimperoots.fr/ws/cr-index.php?format=json`
+- JSON d’une autre catégorie : `https://www.grimperoots.fr/ws/cr-index.php?category_id=14&format=json`
+
+Le JSON a cette forme :
+
+```json
+{
+  "data": [
+    {"id": 802, "title": "Titre du compte rendu", "created": "2026-01-15 10:00:00"}
+  ],
+  "meta": {"count": 1}
+}
+```
+
+On peut aussi préciser `Accept: application/json` à la requête HTTP. Sans choix de format, un navigateur reçoit le HTML et un client qui demande du JSON le reçoit en JSON.
+
 Exporter localement la liste :
 
 ```bash
@@ -69,7 +92,15 @@ Le fichier `data/cr_index.json` inclut une URL reconstruite à partir de l’ID.
 
 ### Texte brut d’un article
 
-[`article.php`](joomla_custom/www/ws/article.php) récupère les champs `introtext` et `fulltext` stockés en base, ainsi que les tags. Il ne lance pas les plugins Joomla : une directive comme `{gallery}` est donc conservée. L’endpoint exige le header `X-Grimperoots-Token` ; l’ID seul ne permet pas de consulter le contenu brut.
+[`article.php`](joomla_custom/www/ws/article.php) prend l’ID avec `?id=<ID>` et renvoie exclusivement du JSON ; il n’a pas de rendu HTML. Il récupère les champs `introtext` et `fulltext` stockés en base, ainsi que les tags. Il ne lance pas les plugins Joomla : une directive comme `{gallery}` est donc conservée. L’endpoint exige le header `X-Grimperoots-Token` ; l’ID seul ne permet pas de consulter le contenu brut.
+
+Exemple d’appel direct avec `curl` depuis un terminal où `GRIMPEROOTS_WS_TOKEN` est défini :
+
+```bash
+curl --fail-with-body \
+  -H "X-Grimperoots-Token: ${GRIMPEROOTS_WS_TOKEN}" \
+  "https://www.grimperoots.fr/ws/article.php?id=802"
+```
 
 ```bash
 python3 -m joomla_custom.fetch_article 802
