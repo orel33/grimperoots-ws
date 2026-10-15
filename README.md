@@ -30,7 +30,22 @@ GRIMPEROOTS_WS_TOKEN=jeton-personnel-du-ws
 define('GRIMPEROOTS_WS_TOKEN', 'valeur-aleatoire');
 ```
 
-Générer une valeur avec `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` et utiliser la même des deux côtés. Le `.htaccess` bloque l’accès web à `config.local.php` et au fichier PHP commun.
+Générer une valeur avec `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` et utiliser exactement la même des deux côtés. Le `.htaccess` bloque l’accès web direct à `config.local.php` et au fichier PHP commun.
+
+#### Modifier ou renouveler le jeton
+
+Le jeton existe en deux endroits : dans `.env.local` pour les clients Python, et dans `/www/ws/config.local.php` sur OVH pour le serveur. `deploy_ws.py` ne transfère pas ce fichier lors du déploiement ordinaire d’un endpoint. Pour générer un nouveau jeton et synchroniser les deux emplacements :
+
+```bash
+python3 -m joomla_custom.deploy_ws --token --dry-run
+python3 -m joomla_custom.deploy_ws --token --apply
+```
+
+La simulation n’engendre aucun jeton. Avec `--apply`, le script génère un secret aléatoire sans l’afficher, met à jour uniquement la définition `GRIMPEROOTS_WS_TOKEN` dans le `config.local.php` distant, relit le fichier pour vérifier le transfert, puis vérifie le jeton par HTTPS avant d’enregistrer la même valeur dans `.env.local`. Il refuse de procéder si `.htaccess` ne bloque pas l’accès web à `config.local.php`. En cas d’échec avant la mise à jour locale, il tente de restaurer la configuration OVH précédente. L’écriture locale remplace le fichier de manière atomique et lui applique les permissions `600`.
+
+La vérification HTTPS appelle `article.php?id=0` : le WS vérifie d’abord le jeton et répond ensuite `Invalid id`. Cette réponse HTTP 400 confirme que l’authentification a réussi sans lire un article. Une réponse HTTP 401 indique un jeton absent ou incorrect ; HTTP 503 indique que le fichier de configuration serveur est absent. Ne pas tester en ouvrant l’endpoint dans un navigateur : celui-ci n’envoie pas le header secret.
+
+Le transfert FTP suit `FTP_PLAIN` dans `.env.local`. Si `FTP_PLAIN=true`, FTP transmet le jeton sans chiffrement. Une variable `GRIMPEROOTS_WS_TOKEN` déjà exportée dans un terminal continue aussi de remplacer celle de `.env.local` : après rotation, exécuter `unset GRIMPEROOTS_WS_TOKEN` dans ce terminal ou l’actualiser. Ne jamais mettre le jeton dans une URL, le JSON de réponse ou un fichier versionné ; le `.htaccess` bloque aussi le téléchargement direct du fichier de configuration.
 
 Les identifiants MySQL ne sont pas nécessaires dans `.env.local` : les endpoints PHP les lisent sur OVH dans `/www/j6/configuration.php`. Les variables `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, `FTP_PLAIN` et `REMOTE_ROOT` servent uniquement au déploiement décrit ci-dessous. `J6_DB_*` n’est pas utilisé localement.
 
