@@ -21,7 +21,7 @@ L'objectif est de construire un processus fiable qui :
 ## Organisation du dépôt
 
 - `joomla_api/` contient les clients des Web Services Joomla standards.
-- `joomla_custom/` contient les outils utilisant des relais PHP temporaires pour les lectures ciblées non couvertes par le WS standard.
+- `joomla_custom/` contient le WS PHP personnalisé et ses clients pour les lectures ciblées non couvertes par le WS standard.
 - `tag_indexing/` contient la revue, l'application des propositions et le rendu HTML local.
 - `data/`, `logs/` et `output/` restent à la racine. Exécuter les outils depuis la racine sous la forme `python3 -m paquet.module`.
 
@@ -72,7 +72,7 @@ Le système ne doit **jamais créer automatiquement de nouveaux tags Joomla**.
 
 Les tags autorisés sont ceux :
 - récupérés depuis Joomla ;
-- éventuellement documentés dans un fichier `TAGS.md`.
+- éventuellement documentés dans un fichier `tag_indexing/TAGS.md`.
 
 L'assistant doit choisir uniquement parmi cette liste fermée.
 
@@ -98,7 +98,7 @@ Le premier objectif est l'enrichissement des anciens articles, pas le nettoyage 
 
 Utiliser l'API Web Services Joomla 6 pour les exports courants et toutes les écritures.
 
-Deux lectures ciblées font exception : `joomla_custom/fetch_article_from_db.py` pour récupérer le texte brut d'un article, et `joomla_custom/fetch_cr_index.py` pour produire l'index léger des CR. Elles utilisent un relais PHP temporaire authentifié par un jeton aléatoire, font uniquement des requêtes `SELECT` et suppriment le relais à la fin. L'index SQL ne lit que l'ID, le titre et la date des articles publiés sous la catégorie racine `CRs` ; l'URL est reconstruite localement à partir de l'ID. Ne pas étendre cette exception à d'autres exports ni aux écritures.
+Deux lectures ciblées font exception au WS standard : `joomla_custom/www/ws/article.php` récupère les champs texte bruts d'un article et ses tags ; `joomla_custom/www/ws/cr-index.php` fournit l'index léger des CR. Le point d'accès article exige `GRIMPEROOTS_WS_TOKEN` et compare les valeurs en temps constant. L'index ne renvoie que l'ID, le titre et la date des articles publiés dans la catégorie racine `CRs` et ses sous-catégories. Ces endpoints exécutent seulement des requêtes `SELECT`. Leur code est versionné dans Git ; `config.local.php` reste hors Git et est bloqué en HTTP par `.htaccess`. Ne pas étendre cette exception à d'autres exports ni aux écritures.
 
 Ne jamais modifier directement la base de données Joomla.
 
@@ -209,7 +209,7 @@ Ne pas télécharger les images pour la première version du système.
 
 L'assistant travaille à partir des exports présents dans `data/`. Ne pas appeler l'API OpenAI, ne pas transmettre le contenu à un service de classification externe et ne demander ni clé OpenAI ni SDK.
 
-Pour chaque article demandé par l'utilisateur, lire le texte complet ainsi que le titre, la catégorie, la date et les tags actuels. Comparer les faits de l'article à la liste fermée des tags de `data/tags.json` et à leurs descriptions dans `TAGS.md`. Produire une proposition courte dans `data/proposals.json` avec `status=pending`, puis présenter les associations et retraits envisagés dans un tableau `+Tag` / `-Tag`. Les ajouts sont proposés par défaut ; les retraits restent exclus, sauf demande ou validation explicite de l'utilisateur.
+Pour chaque article demandé par l'utilisateur, lire le texte complet ainsi que le titre, la catégorie, la date et les tags actuels. Comparer les faits de l'article à la liste fermée des tags de `data/tags.json` et à leurs descriptions dans `tag_indexing/TAGS.md`. Produire une proposition courte dans `data/proposals.json` avec `status=pending`, puis présenter les associations et retraits envisagés dans un tableau `+Tag` / `-Tag`. Les ajouts sont proposés par défaut ; les retraits restent exclus, sauf demande ou validation explicite de l'utilisateur.
 
 L'analyse doit suivre ces règles :
 
@@ -223,7 +223,7 @@ L'analyse doit suivre ces règles :
 - pouvoir signaler les cas ambigus ;
 - préserver les tags existants.
 
-Les propositions locales suivent le format JSON de `data/proposals.json`. Ajouter ou mettre à jour une entrée par ID d'article sans remplacer les entrées des autres articles. Une entrée contient `existing_tags` (état complet de départ), `final_tags` (cible complète), `status` et, si utile, `notes`. `pending` signifie qu'une suggestion attend validation ; `ready` signifie que l'utilisateur a validé ou explicitement donné la cible ; `applied` signifie que Joomla a confirmé la cible par relecture. Les notes sont facultatives et peuvent expliquer une décision métier à intégrer ensuite dans `TAGS.md`. Ne pas ajouter de métadonnées propres à un modèle ou à une API de classification.
+Les propositions locales suivent le format JSON de `data/proposals.json`. Ajouter ou mettre à jour une entrée par ID d'article sans remplacer les entrées des autres articles. Une entrée contient `existing_tags` (état complet de départ), `final_tags` (cible complète), `status` et, si utile, `notes`. `pending` signifie qu'une suggestion attend validation ; `ready` signifie que l'utilisateur a validé ou explicitement donné la cible ; `applied` signifie que Joomla a confirmé la cible par relecture. Les notes sont facultatives et peuvent expliquer une décision métier à intégrer ensuite dans `tag_indexing/TAGS.md`. Ne pas ajouter de métadonnées propres à un modèle ou à une API de classification.
 
 Pour ouvrir une campagne distincte, actualiser d'abord les exports Joomla nécessaires, puis utiliser `python3 -m tag_indexing.init_proposals`. Ce script archive le cycle précédent sous `data/archive/` et initialise `data/proposals.json` à `{}`. Ne pas préremplir les propositions pour tous les articles : `data/articles.json` conserve déjà leur état courant complet, tandis que `proposals.json` suit uniquement les articles analysés pendant le cycle.
 

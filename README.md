@@ -1,35 +1,42 @@
-# Grimperoots Indexer
+# Grimperoots Web Services
 
-Ce dépôt exporte les articles et les tags du site Joomla 6 Grimperoots. L’assistant analyse les comptes rendus à partir des fichiers locaux et enregistre les propositions dans `data/proposals.json`. Après autorisation du lot, les tags retenus sont appliqués avec l’API Joomla.
+Outils pour exporter des données du site Joomla 6 Grimperoots, compléter les articles avec leurs tags et consulter les champs bruts des comptes rendus. Les commandes se lancent depuis la racine du dépôt.
 
-## État du projet
+## Organisation
 
-- Les exports Joomla, le référentiel des tags et les propositions sont dans `data/`, ignoré par Git.
-- `TAGS.md` décrit les tags disponibles et leurs règles métier.
-- L’analyse sémantique est faite dans la conversation à partir du texte complet exporté ; aucune clé ni dépendance de classification externe n’est nécessaire.
-- `python3 -m tag_indexing.apply <ID> --review` permet de passer interactivement une proposition de `pending` à `ready` ou inversement ; `python3 -m tag_indexing.apply --review --all` propose une revue individuelle ou un changement de statut en lot. Ce mode reste local et ignore les propositions `applied`.
-- `python3 -m tag_indexing.apply <ID>` inspecte une proposition `ready` ; `python3 -m tag_indexing.apply --all` traite uniquement les propositions `ready`. Sans `--apply`, les commandes simulent les changements.
+| Répertoire | Rôle | Outils principaux |
+|---|---|---|
+| `joomla_api/` | Accès aux Web Services Joomla standards | Export des articles, tags, catégories et auteurs |
+| `joomla_custom/` | Endpoints PHP spécifiques et clients Python associés | Index public des CR et lecture protégée du texte brut |
+| `tag_indexing/` | Travail local d’indexage | Revue des propositions, application des tags et rendu HTML |
 
+Les données locales restent à la racine : `data/` contient les exports et propositions, `logs/` les journaux d’application et `output/` les rendus HTML. Ces répertoires de données sont ignorés par Git.
 
-## Organisation du dépôt
+## Configuration
 
-- `joomla_api/` : clients des endpoints Joomla Web Services standard, en lecture ou écriture via l’API officielle.
-- `joomla_custom/` : outils basés sur le relais PHP temporaire/SQL en lecture seule, utilisés uniquement lorsqu’un endpoint standard ne fournit pas la donnée brute nécessaire. Le futur endpoint OVH peut être préparé ici.
-- `tag_indexing/` : propositions, revue, application des tags et rendu HTML local des articles.
-- `data/`, `logs/` et `output/` restent à la racine du dépôt. Lance les modules depuis cette racine avec `python3 -m …`.
-
-## Prérequis et configuration
-
-- Python 3.10 ou supérieur.
-- Un accès API Joomla pour actualiser les exports et appliquer les tags.
-- `.env.local` à la racine du dépôt, ignoré par Git :
+Utiliser Python 3.10 ou supérieur. Le fichier `.env.local`, ignoré par Git, contient la configuration des API :
 
 ```dotenv
 JOOMLA_BASE_URL=https://www.example.org/j6
 JOOMLA_TOKEN=jeton-joomla
+SITE_URL=https://www.example.org/j6
+GRIMPEROOTS_WS_TOKEN=jeton-personnel-du-ws
 ```
 
-## Actualiser les exports Joomla
+`JOOMLA_TOKEN` sert uniquement aux Web Services Joomla standards. `GRIMPEROOTS_WS_TOKEN` est un secret distinct pour l’endpoint de lecture du texte brut. Le définir aussi dans le fichier non versionné `joomla_custom/www/ws/config.local.php` sur l’hébergement :
+
+```php
+<?php
+define('GRIMPEROOTS_WS_TOKEN', 'valeur-aleatoire');
+```
+
+Générer une valeur avec `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` et utiliser la même des deux côtés. Le `.htaccess` bloque l’accès web à `config.local.php` et au fichier PHP commun.
+
+---
+
+## 1. `joomla_api/` — API Joomla standard
+
+Ces commandes lisent les données via Joomla Web Services et écrivent les exports dans `data/` :
 
 ```bash
 python3 -m joomla_api.fetch_tags
@@ -38,92 +45,52 @@ python3 -m joomla_api.fetch_authors
 python3 -m joomla_api.fetch_articles
 ```
 
-Les scripts exportent vers `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ils utilisent l’API Joomla en lecture seule.
+Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ces exports sont en lecture seule.
 
-### Exporter l'index léger des CR
+---
 
-`joomla_custom/fetch_cr_index.py` exporte seulement l'ID, le titre et la date des articles publiés dans la catégorie racine Joomla `CRs` (ID 33) et ses sous-catégories. L'URL publique suit la forme `SITE_URL/<ID>` et est reconstruite localement. Le script évite ainsi de télécharger le texte complet et le HTML SIGPlus de chaque article.
+## 2. `joomla_custom/` — Endpoints complémentaires
 
-Par défaut, la commande affiche une simulation sans contacter l'hébergement :
+Les endpoints versionnés sont dans `joomla_custom/www/ws/`. Sur l’hébergement actuel, leur destination est `/www/ws/`, à côté de l’installation Joomla `/www/j6/`. Ils chargent sa configuration depuis `/www/j6/configuration.php`.
+
+### Index des comptes rendus
+
+[`cr-index.php`](joomla_custom/www/ws/cr-index.php) sélectionne les articles publiés de la catégorie racine `CRs` (ID 33) et de ses sous-catégories. Il renvoie uniquement l’ID, le titre et la date. Le JSON est utilisé par le client Python ; l’ouverture dans un navigateur affiche une table HTML :
+
+[https://www.grimperoots.fr/ws/cr-index.php](https://www.grimperoots.fr/ws/cr-index.php)
+
+Exporter localement la liste :
 
 ```bash
 python3 -m joomla_custom.fetch_cr_index
 ```
 
-Pour effectuer l'export :
+Le fichier `data/cr_index.json` inclut une URL reconstruite à partir de l’ID. `--category-id` permet de choisir une autre catégorie et `--output` de modifier le fichier de sortie. `--dry-run` affiche la requête sans la lancer.
+
+### Texte brut d’un article
+
+[`article.php`](joomla_custom/www/ws/article.php) récupère les champs `introtext` et `fulltext` stockés en base, ainsi que les tags. Il ne lance pas les plugins Joomla : une directive comme `{gallery}` est donc conservée. L’endpoint exige le header `X-Grimperoots-Token` ; l’ID seul ne permet pas de consulter le contenu brut.
 
 ```bash
-python3 -m joomla_custom.fetch_cr_index --apply
+python3 -m joomla_custom.fetch_article 802
+python3 -m joomla_custom.fetch_article 802 --output data/article-802.json
 ```
 
-Le script utilise le relais PHP temporaire déjà employé par `joomla_custom/fetch_article_from_db.py` : il le dépose dans la racine Joomla via FTP, exécute un `SELECT` limité à l'ID, au titre et à la date, puis le supprime. Aucune donnée n'est écrite en base. Le résultat est enregistré dans `data/cr_index.json`. `--category-id` permet de sélectionner une autre catégorie racine et `--output` de changer le fichier de sortie. Si la suppression du relais échoue, le script affiche un avertissement indiquant de supprimer via FTP le fichier `fetch-cr-index-*.php` restant.
+La sortie contient `id`, `title`, `alias`, `category_id`, `category`, `created`, `introtext`, `fulltext` et `existing_tags`. `--dry-run` simule la requête. L’ancien `--apply` reste accepté comme alias de compatibilité et ne provoque aucune écriture.
 
-### Lire un article depuis la base de l'hébergement mutualisé
+Ces endpoints utilisent uniquement des requêtes SQL `SELECT`. Les outils Python les appellent en HTTPS et ne déposent plus de fichiers temporaires par FTP.
 
-La base OVH mutualisée n'étant pas accessible depuis l'extérieur, `joomla_custom/fetch_article_from_db.py` utilise un relais PHP temporaire. Le mode par défaut est une simulation et ne contacte pas l'hébergement :
+---
 
-```bash
-python3 -m joomla_custom.fetch_article_from_db 34
-```
+## 3. `tag_indexing/` — Indexage des tags
 
-Pour effectuer la lecture, il faut utiliser `--apply` :
+L’analyse se fait dans la conversation à partir des exports locaux. Lire le compte rendu complet, sa catégorie et ses tags actuels ; comparer les faits aux tags Joomla et à leurs descriptions dans [tag_indexing/TAGS.md](tag_indexing/TAGS.md). Ne pas appeler d’API de classification externe. Les ajouts sont proposés par défaut ; préserver les tags existants et ne proposer des retraits qu’après validation explicite.
 
-```bash
-python3 -m joomla_custom.fetch_article_from_db 34 --apply
-```
+Les suites prévues sont résumées dans la [feuille de route](tag_indexing/ROADMAP.md).
 
-Le script dépose par FTP un fichier PHP au nom aléatoire dans `REMOTE_ROOT`, appelle ce fichier sur `SITE_URL` en HTTPS, puis le supprime par FTP. Le PHP charge `configuration.php` et exécute uniquement des `SELECT` paramétrés sur l'article, sa catégorie et ses tags. Si la suppression échoue, le script affiche un avertissement : supprime alors le fichier `fetch-article-*.php` restant dans la racine Joomla via FTP.
+### Propositions
 
-La sortie JSON est écrite sur stdout. Pour l'enregistrer localement :
-
-```bash
-python3 -m joomla_custom.fetch_article_from_db 34 --apply --output data/article-34.json
-```
-
-Les paramètres requis sont `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, `SITE_URL` (URL HTTPS de l'installation Joomla) et `REMOTE_ROOT` (racine distante qui contient `configuration.php`), dans `.env.local` ou dans l'environnement. Le script utilise FTPS si `FTP_PLAIN` n'est pas activé. Aucun connecteur Python ni connexion MySQL depuis le poste local n'est requis. Les erreurs n'affichent pas le mot de passe FTP.
-
-Le JSON est un objet plat contenant `id`, `title`, `alias`, `category_id`, `category`, `created`, `introtext`, `fulltext` et `existing_tags`. `introtext` et `fulltext` sont les champs HTML bruts stockés en base ; le script ne lance pas les plugins de contenu Joomla. Ainsi, si un article stocke une directive telle que `{gallery}`, elle reste telle quelle dans le texte SQL. À l'inverse, `data/articles.json` provient de l'API Joomla et place le texte dans `attributes.text` ; l'export local consulté contient du HTML de galerie SIGPlus rendu (653 articles avec `sigplus-gallery`, aucun `{gallery}` littéral). Le HTML, les entités (`&eacute;`) et les directives de plugins ne sont pas normalisés par le script SQL.
-
-Exemple de forme de sortie :
-
-```json
-{
-  "id": 34,
-  "title": "Titre de l'article",
-  "alias": "8",
-  "category_id": 14,
-  "category": "Montagne hiver",
-  "created": "2007-02-07 17:17:17",
-  "introtext": "<p>Texte d'introduction…</p>",
-  "fulltext": "<p>Texte complet…</p>",
-  "existing_tags": [25, 28, 33, 35, 36]
-}
-```
-
-## Faire analyser des articles
-
-Demande à l’assistant d’analyser un ou plusieurs IDs à partir des exports de `data/`. Il lit l’article en entier, vérifie la catégorie, les tags existants et `TAGS.md`, puis présente un diff `+Tag` / `-Tag` avec une justification concise. Chaque proposition contient l’état initial complet `existing_tags`, la cible complète `final_tags` et un `status`. Une suggestion de l’assistant commence en `pending`. Les retraits doivent être explicitement demandés ou validés.
-
-Quand tu valides une suggestion ou donnes explicitement la cible souhaitée, la proposition passe à `ready`. Les tags autorisés viennent de l’export Joomla ; un nouveau tag doit d’abord être créé dans Joomla, puis son export et `TAGS.md` doivent être actualisés avant de pouvoir l’ajouter à une proposition.
-
-Format d'une entrée dans `data/proposals.json` :
-
-```json
-"710": {
-  "existing_tags": [26, 28, 30, 31, 33, 35],
-  "final_tags": [30, 33, 35],
-  "status": "ready",
-  "notes": "Course & Trail, Escalade et Mobilité Douce ne sont pas représentatifs."
-}
-```
-
-`final_tags` est la liste complète envoyée dans le PATCH ; les ajouts et retraits se calculent par différence avec `existing_tags`. `notes` est facultatif et sert à garder le raisonnement.
-
-Les exports et propositions sont locaux et ignorés par Git. Ils ne modifient pas Joomla.
-
-## Démarrer un nouveau cycle de propositions
-
-Avant un nouveau cycle, actualise les articles et les tags depuis Joomla, puis archive les décisions du cycle précédent :
+Avant un nouveau cycle, actualiser les articles et les tags, puis archiver les propositions précédentes :
 
 ```bash
 python3 -m joomla_api.fetch_articles
@@ -131,58 +98,39 @@ python3 -m joomla_api.fetch_tags
 python3 -m tag_indexing.init_proposals
 ```
 
-`python3 -m tag_indexing.init_proposals` archive le fichier existant dans `data/archive/proposals-<horodatage>.json` puis crée `data/proposals.json` avec `{}`. Le nouveau fichier se remplit uniquement avec les articles analysés pendant le cycle. Les tags courants de tous les articles restent disponibles dans `data/articles.json` ; ils n'ont pas à être dupliqués dans les propositions. La commande ne contacte pas Joomla. Si le fichier est déjà vide, elle le laisse tel quel et ne crée pas d'archive vide.
+L’assistant ajoute ses propositions dans `data/proposals.json` avec `status: "pending"`. Après validation, chaque entrée passe à `ready` et contient l’état complet `existing_tags` ainsi que la cible complète `final_tags`. Les propositions `applied` indiquent que Joomla a confirmé l’écriture par relecture.
 
-## Appliquer les propositions
+### Revue et application
 
-Pour examiner une proposition et modifier son statut après validation :
+Revoir localement les propositions et changer leur statut :
 
 ```bash
-python3 -m tag_indexing.apply 764 --review
+python3 -m tag_indexing.apply 802 --review
 python3 -m tag_indexing.apply --review --all
 ```
 
-Le mode interactif affiche le titre, les tags existants et cibles, le diff et les notes. Avec `--all`, tu peux passer toutes les propositions `pending` à `ready`, toutes les `ready` à `pending`, ou décider article par article. Les propositions `applied` sont protégées. `--review` ne contacte pas Joomla et nécessite un terminal interactif.
-
-Commence par inspecter le lot :
+Inspecter les propositions `ready` sans écrire :
 
 ```bash
 python3 -m tag_indexing.apply --all --dry-run
 ```
 
-Après avoir passé les propositions approuvées au statut `ready`, appliquer le lot :
+Appliquer les propositions validées à Joomla :
 
 ```bash
 python3 -m tag_indexing.apply --all --apply
 ```
 
-Pour un seul article :
+Toute écriture exige `--apply`. Le PATCH contient uniquement l’ID de l’article et la liste finale des IDs de tags, par exemple `{"id": 802, "tags": [33, 36]}`. Il ne renvoie pas le titre, le texte, les images ni le reste du contenu de l’article. Les journaux d’application vont dans `logs/`.
 
-```bash
-python3 -m tag_indexing.apply 764 --dry-run
-python3 -m tag_indexing.apply 764 --apply
-```
+Sur l’instance actuelle, JComments peut faire répondre HTTP 500 à Joomla après le PATCH et laisser l’article verrouillé, même quand la relecture confirme les tags. L’application désactive donc temporairement son plugin avant l’écriture et le réactive ensuite. Détails dans [tag_indexing/BUGS.md](tag_indexing/BUGS.md).
 
-Sans `--apply`, aucune écriture n’est envoyée. Le script compare les tags Joomla à `existing_tags`, affiche les différences `+Tag (ID)` / `-Tag (ID)`, puis relit chaque article après PATCH. En cas de réponse HTTP 500, la relecture détermine si la cible a tout de même été enregistrée ; les états inconnus ou inattendus restent des erreurs. `--all` ignore les propositions `pending` et `applied`.
+### Rendu HTML
 
-Après relecture Joomla confirmant `final_tags`, `python3 -m tag_indexing.apply --apply` remplace `status: "ready"` par `status: "applied"`. Si l’article correspond déjà à la cible, il est également marqué `applied` sans PATCH. Le mode `--dry-run` ne modifie ni Joomla ni `proposals.json`. Les journaux dans `logs/` conservent l’heure, l’état avant/après, le résultat et les notes. Pour réviser un article appliqué, actualise `existing_tags` depuis Joomla, définis une nouvelle `final_tags` complète et remets son statut à `pending` ou `ready` selon que la cible attend encore une validation.
-
-Un cycle peut rester dans `proposals.json` pour conserver ses décisions et ses statuts. Pour repartir sur une nouvelle campagne, utilise `python3 -m tag_indexing.init_proposals` : l'archive conserve l'historique et le nouveau fichier ne contient que les propositions du cycle à venir. Joomla reste la source de vérité pour les tags actuels.
-
-Par défaut, `--apply` désactive temporairement par l’API Joomla le plugin **Content - Comments (JComments)**, ID 10005, pour toute l’exécution, puis le réactive s’il était actif au départ. Ce contournement évite le callback qui provoque HTTP 500 et peut laisser des articles verrouillés. `--keep-jcomments-enabled` permet de désactiver ce contournement. Les verrous déjà laissés par une exécution précédente doivent être check-in dans l’administration Joomla avant de retenter ces articles.
-
-Le corps du PATCH contient uniquement l’ID de l’article et la liste finale des IDs de tags, sous la forme `{"id": 764, "tags": [33, 36]}`. Le script ne renvoie pas le titre, le texte, les images ni les autres champs de l’article. Les réponses GET servent à comparer l’état initial et à vérifier les tags après le PATCH ; elles ne sont pas renvoyées à Joomla. Cette écriture limitée aux tags réduit fortement le risque d’écraser ou d’endommager le contenu des articles.
-
-Sur l’instance actuelle, JComments provoque une réponse HTTP 500 après certains PATCH et peut laisser l’article verrouillé par l’utilisateur API. Voir [BUGS.md](BUGS.md). Les journaux sont écrits dans `logs/`, ignoré par Git.
-
-La qualité des associations pourra être revue après application et corrigée dans un lot ultérieur.
-
-## Rendu HTML
-
-Pour générer le HTML d’un article exporté :
+Générer un rendu à partir des JSON locaux :
 
 ```bash
 python3 -m tag_indexing.render_article 802
 ```
 
-Le fichier est écrit dans `output/`.
+Le fichier et sa feuille de style sont écrits dans `output/`.

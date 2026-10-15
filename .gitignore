@@ -6,3 +6,4 @@ output/
 logs/
 __pycache__/
 *.py[cod]
+joomla_custom/www/ws/config.local.php

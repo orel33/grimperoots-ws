@@ -24,7 +24,7 @@ DEFAULT_LOGS_DIR = PROJECT_DIR / "logs"
 JCOMMENTS_CONTENT_PLUGIN_ID = 10005
 ENV_KEYS = ("JOOMLA_BASE_URL", "JOOMLA_TOKEN")
 KNOWN_APPLY_WARNING = (
-    "AVERTISSEMENT — Voir BUGS.md : sur l'instance actuelle, le plugin Content - JComments "
+    "AVERTISSEMENT — Voir tag_indexing/BUGS.md : sur l'instance actuelle, le plugin Content - JComments "
     "provoque une réponse HTTP 500 après certains PATCH API. La relecture confirme si les tags "
     "ont été enregistrés ; l'actualisation des métadonnées JComments peut, elle, échouer."
 )
