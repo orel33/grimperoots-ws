@@ -32,6 +32,24 @@ python3 fetch_articles.py
 
 Les scripts exportent vers `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ils utilisent l’API Joomla en lecture seule.
 
+### Exporter l'index léger des CR
+
+`fetch_cr_index.py` exporte seulement l'ID, le titre et la date des articles publiés dans la catégorie racine Joomla `CRs` (ID 33) et ses sous-catégories. L'URL publique suit la forme `SITE_URL/<ID>` et est reconstruite localement. Le script évite ainsi de télécharger le texte complet et le HTML SIGPlus de chaque article.
+
+Par défaut, la commande affiche une simulation sans contacter l'hébergement :
+
+```bash
+./fetch_cr_index.py
+```
+
+Pour effectuer l'export :
+
+```bash
+./fetch_cr_index.py --apply
+```
+
+Le script utilise le relais PHP temporaire déjà employé par `fetch_article_from_db.py` : il le dépose dans la racine Joomla via FTP, exécute un `SELECT` limité à l'ID, au titre et à la date, puis le supprime. Aucune donnée n'est écrite en base. Le résultat est enregistré dans `data/cr_index.json`. `--category-id` permet de sélectionner une autre catégorie racine et `--output` de changer le fichier de sortie. Si la suppression du relais échoue, le script affiche un avertissement indiquant de supprimer via FTP le fichier `fetch-cr-index-*.php` restant.
+
 ### Lire un article depuis la base de l'hébergement mutualisé
 
 La base OVH mutualisée n'étant pas accessible depuis l'extérieur, `fetch_article_from_db.py` utilise un relais PHP temporaire. Le mode par défaut est une simulation et ne contacte pas l'hébergement :

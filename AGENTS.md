@@ -89,7 +89,9 @@ Le premier objectif est l'enrichissement des anciens articles, pas le nettoyage 
 
 ### Accès Joomla
 
-Utiliser exclusivement l'API Web Services Joomla 6.
+Utiliser l'API Web Services Joomla 6 pour les exports courants et toutes les écritures.
+
+Deux lectures ciblées font exception : `fetch_article_from_db.py` pour récupérer le texte brut d'un article, et `fetch_cr_index.py` pour produire l'index léger des CR. Elles utilisent un relais PHP temporaire authentifié par un jeton aléatoire, font uniquement des requêtes `SELECT` et suppriment le relais à la fin. L'index SQL ne lit que l'ID, le titre et la date des articles publiés sous la catégorie racine `CRs` ; l'URL est reconstruite localement à partir de l'ID. Ne pas étendre cette exception à d'autres exports ni aux écritures.
 
 Ne jamais modifier directement la base de données Joomla.
 
