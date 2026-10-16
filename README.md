@@ -66,6 +66,22 @@ python3 -m joomla_api.fetch_articles
 
 Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ces exports sont en lecture seule.
 
+### Démonstration de l'authentification HTTP Basic
+
+[`basic_auth_demo.py`](joomla_api/basic_auth_demo.py) envoie une requête GET en lecture seule vers `GET /api/index.php/v1/users?page[limit]=1` en utilisant un compte Joomla existant. Le script impose HTTPS, vérifie le certificat du serveur, refuse les redirections et n'affiche pas les données utilisateur reçues.
+
+**Prérequis :** le plugin Joomla **API Authentication - Basic** doit être installé et activé. Dans l'administration, ouvrir **Système → Gérer → Plugins**, rechercher ce nom et contrôler son état. Le compte doit aussi avoir le droit de se connecter à l'API et l'accès au composant Utilisateurs ; une réponse 401 invite à vérifier le plugin et les identifiants, tandis qu'une réponse 403 indique un problème de permissions.
+
+Lancer la démo :
+
+```bash
+python3 -m joomla_api.basic_auth_demo
+```
+
+Le script lit `JOOMLA_BASE_URL` depuis `.env.local`, puis demande toujours le login et le mot de passe dans le terminal. Le mot de passe est saisi sans affichage ; les identifiants ne sont pas lus depuis un fichier et ne sont pas enregistrés par le script. On peut passer un autre fichier de configuration avec `--env-file chemin/vers/fichier`. Ne jamais inscrire ces identifiants dans une URL ou un fichier versionné.
+
+HTTP Basic transmet les identifiants à chaque requête, encodés mais non chiffrés par lui-même : cette démo n'autorise donc que HTTPS. Joomla prend en charge cette méthode, mais recommande les jetons pour les intégrations habituelles ; la démo sert à vérifier l'authentification d'un compte existant. Elle ne protège pas les scripts PHP autonomes de `/media/`, qui ne passent pas par le dispatcher de l'API Joomla.
+
 ---
 
 ## 2. `joomla_custom/` — Endpoints complémentaires
