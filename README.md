@@ -66,6 +66,35 @@ python3 -m joomla_api.fetch_articles
 
 Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ces exports sont en lecture seule.
 
+### Démonstration de création d'article
+
+[`create_article_demo.py`](joomla_api/create_article_demo.py) montre la création d'un article par `POST /api/index.php/v1/content/articles`, avec le token `JOOMLA_TOKEN`. L'article est explicitement créé non publié (`state: 0`). La simulation est le comportement par défaut ; `--apply` envoie réellement la requête et crée un nouvel article à chaque exécution. L'option facultative `--login` choisit l'auteur Joomla : le script résout le nom de connexion en ID avec une requête de lecture sur l'endpoint Users et inclut cet ID dans `created_by`.
+
+```bash
+python3 -m joomla_api.create_article_demo \
+  --title "Démo API Joomla" \
+  --category-id 33 \
+  --text "Article de démonstration créé via le Web Service Joomla."
+```
+
+Inspecter le payload puis ajouter `--apply` pour créer le brouillon sur Joomla :
+
+```bash
+python3 -m joomla_api.create_article_demo \
+  --title "Démo API Joomla" \
+  --category-id 33 \
+  --text "Article de démonstration créé via le Web Service Joomla." \
+  --apply
+```
+
+Pour choisir un auteur, ajouter par exemple `--login orel` à la commande :
+
+```bash
+python3 -m joomla_api.create_article_demo --title "Démo API Joomla" --category-id 33 --text "Article de démonstration." --login orel
+```
+
+Avec `--login`, le token doit aussi avoir le droit de lire l'endpoint Users. Le compte associé au token doit avoir le droit de créer un article dans la catégorie choisie et de définir son auteur. Le script ne publie pas le brouillon et ne modifie aucun article existant. La simulation avec `--login` fait uniquement la lecture nécessaire pour résoudre le login ; elle n'envoie pas le POST de création.
+
 ### Démonstration de l'authentification HTTP Basic
 
 [`basic_auth_demo.py`](joomla_api/basic_auth_demo.py) envoie une requête GET en lecture seule vers `GET /api/index.php/v1/users?page[limit]=1` en utilisant un compte Joomla existant. Le script impose HTTPS, vérifie le certificat du serveur, refuse les redirections et n'affiche pas les données utilisateur reçues.
