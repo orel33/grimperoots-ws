@@ -102,7 +102,11 @@ Avec `--login`, le token doit aussi avoir le droit de lire l'endpoint Users. Le 
 
 [`basic_auth_demo.py`](joomla_api/basic_auth_demo.py) envoie une requête GET en lecture seule vers `GET /api/index.php/v1/users?page[limit]=1` en utilisant un compte Joomla existant. Le script impose HTTPS, vérifie le certificat du serveur, refuse les redirections et n'affiche pas les données utilisateur reçues.
 
-**Prérequis :** le plugin Joomla **API Authentication - Basic** doit être installé et activé. Dans l'administration, ouvrir **Système → Gérer → Plugins**, rechercher ce nom et contrôler son état. Le compte doit aussi avoir le droit de se connecter à l'API et l'accès au composant Utilisateurs ; une réponse 401 invite à vérifier le plugin et les identifiants, tandis qu'une réponse 403 indique un problème de permissions.
+**Prérequis :** le plugin Joomla **API Authentication - Basic** doit être installé et activé. Dans l'administration, ouvrir **Système → Gérer → Plugins**, rechercher ce nom et contrôler son état.
+
+Pour autoriser les utilisateurs du groupe **Registered** à s'authentifier auprès de l'API, ouvrir **Système → Configuration globale → Permissions**, sélectionner **Registered**, puis régler **Web Services Login** (`core.login.api`) sur **Allowed** et enregistrer. Vérifier que le réglage calculé est bien **Allowed** et qu'aucun groupe parent ne refuse ce droit. Les groupes enfants héritent de cette permission.
+
+Ce droit autorise l'authentification à l'API, mais ne donne pas automatiquement accès à tous ses endpoints. La démo appelle `/users`, qui requiert en plus les permissions du composant Utilisateurs. Ne pas accorder cette permission à `Registered` uniquement pour faire réussir la démo. Une réponse 401 indique que l'authentification API est refusée (plugin, identifiants ou `core.login.api`) ; une réponse 403 peut indiquer que l'utilisateur authentifié n'a pas accès à l'endpoint demandé.
 
 Lancer la démo :
 
