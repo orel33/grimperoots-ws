@@ -62,9 +62,12 @@ python3 -m joomla_api.fetch_tags
 python3 -m joomla_api.fetch_categories
 python3 -m joomla_api.fetch_authors
 python3 -m joomla_api.fetch_articles
+python3 -m joomla_api.fetch_users
+python3 -m joomla_api.fetch_users --superuser
+python3 -m joomla_api.fetch_users -h
 ```
 
-Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json` et `data/articles.json`. Ces exports sont en lecture seule.
+Fichiers produits : `data/tags.json`, `data/categories.json`, `data/authors.json`, `data/articles.json` et `data/users.json`. Ces exports sont en lecture seule. `fetch_users` liste les IDs, logins, noms, groupes Joomla et l'état bloqué/actif ; il n'enregistre pas les e-mails. `--superuser` limite l'affichage et l'export aux membres du groupe **Super Users** ; `-h` affiche l'aide. L'accès à l'endpoint Users est requis, généralement avec un token autorisé à consulter le composant Utilisateurs. Les groupes ne constituent pas un export complet des permissions ACL.
 
 ### Démonstration de création d'article
 
